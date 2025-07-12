@@ -336,7 +336,7 @@ DWORD MainDlg::LoadImageFile( const std::wstring& path )
 /// <param name="exports">Module exports</param>
 void MainDlg::AddToModuleList( std::shared_ptr<blackbone::pe::PEImage>& img )
 {
-    wchar_t* platfom = nullptr;
+    const wchar_t* platfom = nullptr;
 
     // Module platform
     if (img->mType() == blackbone::mt_mod32)

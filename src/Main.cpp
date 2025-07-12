@@ -61,7 +61,7 @@ void AssociateExtension()
 void LogOSInfo()
 {
     SYSTEM_INFO info = { 0 };
-    char* osArch = "x64";
+    const char* osArch = "x64";
 
     auto pPeb = (blackbone::PEB_T*)NtCurrentTeb()->ProcessEnvironmentBlock;
     GetNativeSystemInfo( &info );

@@ -115,7 +115,7 @@ private:
     /// <param name="img">Target image</param>
     /// <param name="initRVA">Init function RVA</param>
     /// <returns>Error code</returns>
-    NTSTATUS InjectionCore::InjectKernel(
+    NTSTATUS InjectKernel(
         InjectContext& context,
         const blackbone::pe::PEImage& img,
         uint32_t initRVA /*= 0*/

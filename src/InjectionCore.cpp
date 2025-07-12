@@ -773,8 +773,13 @@ NTSTATUS InjectionCore::CallInitRoutine(
         // Execute in existing thread
         else
         {
-            blackbone::RemoteFunction<fnInitRoutine> pfn( _process, fnPtr );
-            auto status = pfn.Call( context.cfg.initArgs.c_str(), pThread );
+            auto argMem = _process.memory().Allocate( 0x1000, PAGE_READWRITE );
+            if (!argMem)
+                return argMem.status;
+
+            argMem->Write( 0, context.cfg.initArgs.length() * sizeof( wchar_t ) + 2, context.cfg.initArgs.c_str() );
+            uint64_t result = 0;
+            auto status = _process.remote().ExecInWorkerThread( reinterpret_cast<PVOID>(fnPtr), argMem->ptr(), result );
 
             xlog::Normal( "Initialization routine returned 0x%X", status );
         }

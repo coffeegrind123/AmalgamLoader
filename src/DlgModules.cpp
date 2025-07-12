@@ -105,8 +105,8 @@ void ModulesDlg::RefreshList( )
     for (auto& mod : modsAll)
     {
         wchar_t address[64];
-        wchar_t* platfom = nullptr;
-        wchar_t* detected = nullptr;
+        const wchar_t* platfom = nullptr;
+        const wchar_t* detected = nullptr;
 
         wsprintf( address, L"0x%08I64x", mod.second->baseAddress );
 
