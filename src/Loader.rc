@@ -32,7 +32,7 @@ LANGUAGE LANG_NEUTRAL, SUBLANG_DEFAULT
 IDD_MAIN DIALOGEX 0, 0, 221, 209
 STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | DS_CENTER | WS_MINIMIZEBOX | WS_CAPTION | WS_SYSMENU
 EXSTYLE WS_EX_ACCEPTFILES
-CAPTION "Xenos"
+CAPTION "Loader"
 MENU IDR_MENU_MAIN
 FONT 8, "MS Shell Dlg", 400, 0, 0x1
 BEGIN
@@ -195,37 +195,7 @@ END
 // Version
 //
 
-VS_VERSION_INFO VERSIONINFO
- FILEVERSION 2,3,2,0
- PRODUCTVERSION 2,3,2,0
- FILEFLAGSMASK 0x3fL
-#ifdef _DEBUG
- FILEFLAGS 0x1L
-#else
- FILEFLAGS 0x0L
-#endif
- FILEOS 0x40004L
- FILETYPE 0x1L
- FILESUBTYPE 0x0L
-BEGIN
-    BLOCK "StringFileInfo"
-    BEGIN
-        BLOCK "040004b0"
-        BEGIN
-            VALUE "FileDescription", "PE injector"
-            VALUE "FileVersion", "2.3.2.0"
-            VALUE "InternalName", "Xenos.exe"
-            VALUE "LegalCopyright", "Copyright (C) 2017"
-            VALUE "OriginalFilename", "Xenos.exe"
-            VALUE "ProductName", "Xenos"
-            VALUE "ProductVersion", "2.3.2.0"
-        END
-    END
-    BLOCK "VarFileInfo"
-    BEGIN
-        VALUE "Translation", 0x400, 1200
-    END
-END
+// Version information removed for operational security
 
 
 /////////////////////////////////////////////////////////////////////////////

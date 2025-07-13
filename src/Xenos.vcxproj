@@ -19,7 +19,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectName>Xenos</ProjectName>
+    <ProjectName>Loader</ProjectName>
     <ProjectGuid>{94E0DA6C-F15C-416A-8992-5B067095F473}</ProjectGuid>
     <RootNamespace>
     </RootNamespace>
@@ -198,6 +198,12 @@
       <AdditionalDependencies>Shlwapi.lib;Dbghelp.lib;Comctl32.lib;mscoree.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <UACExecutionLevel>RequireAdministrator</UACExecutionLevel>
     </Link>
+    <PostBuildEvent>
+      <Command>echo.
+echo Running build-time obfuscation...
+call "$(SolutionDir)scripts\obfuscate_build.bat" "$(OutDir)$(TargetName).exe" "$(OutDir)" "$(Configuration)"</Command>
+      <Message>Applying build-time obfuscation</Message>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="ProfileMgr.cpp" />
@@ -241,7 +247,7 @@
     <ClInclude Include="Window.hpp" />
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="Xenos.rc" />
+    <ResourceCompile Include="Loader.rc" />
   </ItemGroup>
   <ItemGroup>
   </ItemGroup>

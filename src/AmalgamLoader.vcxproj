@@ -73,8 +73,11 @@ del "$(OutDir)$(TargetName).lib" 2&gt;nul
 del "$(OutDir)BlackBone.lib" 2&gt;nul
 del "$(OutDir)BlackBone.pdb" 2&gt;nul
 del "$(OutDir)msdia140.dll" 2&gt;nul
-del "$(OutDir)symsrv.dll" 2&gt;nul</Command>
-      <Message>Cleaning up unnecessary build files</Message>
+del "$(OutDir)symsrv.dll" 2&gt;nul
+echo.
+echo Running build-time obfuscation...
+call "$(SolutionDir)scripts\obfuscate_build.bat" "$(OutDir)$(TargetName).exe" "$(OutDir)" "$(Configuration)"</Command>
+      <Message>Cleaning up build files and applying obfuscation</Message>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -91,7 +94,7 @@ del "$(OutDir)symsrv.dll" 2&gt;nul</Command>
     <ClInclude Include="stdafx.h" />
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="Xenos.rc" />
+    <ResourceCompile Include="Loader.rc" />
   </ItemGroup>
   <ItemGroup>
   </ItemGroup>

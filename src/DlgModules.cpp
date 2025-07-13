@@ -61,7 +61,7 @@ INT_PTR ModulesDlg::OnUnload( HWND hDlg, UINT message, WPARAM wParam, LPARAM lPa
         // Validate module
         if (barrier.type == blackbone::wow_32_32 && mod->type == blackbone::mt_mod64)
         {
-            Message::ShowError( hDlg, L"Please use Xenos64.exe to unload 64 bit modules from WOW64 process" );
+            Message::ShowError( hDlg, L"Please use Loader64.exe to unload 64 bit modules from WOW64 process" );
             return TRUE;
         }
 

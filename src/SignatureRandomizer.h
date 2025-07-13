@@ -22,6 +22,18 @@ private:
     static bool IsAlreadyProcessed(const std::wstring& filePath);
     static void SetLastError(const std::wstring& error);
     
+    // Hash-based checking functions
+    static std::vector<uint8_t> CalculateFileHash(const std::wstring& filePath);
+    static bool EmbedOriginalHash(const std::wstring& filePath, const std::vector<uint8_t>& hash);
+    static std::vector<uint8_t> ExtractEmbeddedHash(const std::wstring& filePath);
+    static bool HasEmbeddedHash(const std::wstring& filePath);
+    static void CreateFallbackMarker();
+    
+    // New copy-modify-replace functions
+    static bool CopyToTempLocation(const std::wstring& sourcePath, std::wstring& tempPath);
+    static bool ReplaceOriginalFile(const std::wstring& modifiedPath, const std::wstring& originalPath);
+    static bool CleanupTempFiles(const std::wstring& tempDir);
+    
     // Constants for modification
     static constexpr size_t RANDOM_DATA_SIZE = 1024;
     static constexpr size_t MIN_DUMMY_RESOURCES = 5;

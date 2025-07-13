@@ -250,9 +250,9 @@ INT_PTR MainDlg::OnLoadProfile( HWND hDlg, UINT message, WPARAM wParam, LPARAM l
 {
     std::wstring path;
 #ifdef USE64
-    if (OpenSaveDialog( L"Xenos profiles (*.xpr64)\0*.xpr64\0", 1, path ))
+    if (OpenSaveDialog( L"Loader profiles (*.xpr64)\0*.xpr64\0", 1, path ))
 #else
-    if (OpenSaveDialog( L"Xenos profiles (*.xpr)\0*.xpr\0", 1, path ))
+    if (OpenSaveDialog( L"Loader profiles (*.xpr)\0*.xpr\0", 1, path ))
 #endif
     {
         // Reset loaded images
@@ -272,9 +272,9 @@ INT_PTR MainDlg::OnSaveProfile( HWND hDlg, UINT message, WPARAM wParam, LPARAM l
 {
     std::wstring path;
 #ifdef USE64
-    if (OpenSaveDialog( L"Xenos profiles (*.xpr64)\0*.xpr64\0", 1, path, true, L"xpr64" ))
+    if (OpenSaveDialog( L"Loader profiles (*.xpr64)\0*.xpr64\0", 1, path, true, L"xpr64" ))
 #else
-    if (OpenSaveDialog( L"Xenos profiles (*.xpr)\0*.xpr\0", 1, path, true, L"xpr" ))
+    if (OpenSaveDialog( L"Loader profiles (*.xpr)\0*.xpr\0", 1, path, true, L"xpr" ))
 #endif
     {
         SaveConfig( path );

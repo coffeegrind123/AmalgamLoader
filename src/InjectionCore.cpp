@@ -284,9 +284,9 @@ NTSTATUS InjectionCore::ValidateContext( InjectContext& context, const blackbone
     /*if (img.pureIL() && (barrier.type == blackbone::wow_32_64 || barrier.type == blackbone::wow_64_32))
     {
         if (barrier.type == blackbone::wow_32_64)
-            Message::ShowWarning( _hMainDlg, L"Please use Xenos64.exe to inject managed dll '" + img.name() + L"' into x64 process" );
+            Message::ShowWarning( _hMainDlg, L"Please use Loader64.exe to inject managed dll '" + img.name() + L"' into x64 process" );
         else
-            Message::ShowWarning( _hMainDlg, L"Please use Xenos.exe to inject managed dll '" + img.name() + L"' into WOW64 process" );
+            Message::ShowWarning( _hMainDlg, L"Please use Loader.exe to inject managed dll '" + img.name() + L"' into WOW64 process" );
 
         return STATUS_IMAGE_MACHINE_TYPE_MISMATCH;
     }*/
@@ -294,7 +294,7 @@ NTSTATUS InjectionCore::ValidateContext( InjectContext& context, const blackbone
     // Can't inject 64 bit image into WOW64 process from x86 version
     /*if (img.mType() == blackbone::mt_mod64 && barrier.type == blackbone::wow_32_32)
     {
-        Message::ShowWarning( _hMainDlg, L"Please use Xenos64.exe to inject 64 bit image '" + img.name() + L"' into WOW64 process" );
+        Message::ShowWarning( _hMainDlg, L"Please use Loader64.exe to inject 64 bit image '" + img.name() + L"' into WOW64 process" );
         return STATUS_IMAGE_MACHINE_TYPE_MISMATCH;
     }*/
 
@@ -318,9 +318,9 @@ NTSTATUS InjectionCore::ValidateContext( InjectContext& context, const blackbone
             (img.mType() == blackbone::mt_mod64 && barrier.sourceWow64 == true)))
         {
             if (img.mType() == blackbone::mt_mod32)
-                Message::ShowWarning( _hMainDlg, L"Please use Xenos.exe to manually map 32 bit image '" + img.name() + L"'" );
+                Message::ShowWarning( _hMainDlg, L"Please use Loader.exe to manually map 32 bit image '" + img.name() + L"'" );
             else
-                Message::ShowWarning( _hMainDlg, L"Please use Xenos64.exe to manually map 64 bit image '" + img.name() + L"'" );
+                Message::ShowWarning( _hMainDlg, L"Please use Loader64.exe to manually map 64 bit image '" + img.name() + L"'" );
 
             return STATUS_IMAGE_MACHINE_TYPE_MISMATCH;
         }*/

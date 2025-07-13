@@ -155,7 +155,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="Xenos.rc">
+    <ResourceCompile Include="Loader.rc">
       <Filter>Resources</Filter>
     </ResourceCompile>
   </ItemGroup>

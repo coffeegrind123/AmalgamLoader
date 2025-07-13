@@ -6,6 +6,7 @@
 #include "SignatureRandomizer.h"
 #include <shellapi.h>
 #include <set>
+#include <thread>
 
 #define WM_TRAYICON (WM_USER + 1)
 #define ID_TRAY_ICON 1
@@ -317,13 +318,107 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
     // dump::DumpHandler::Instance().CreateWatchdog( blackbone::Utils::GetExeDirectory(), dump::CreateFullDump );
     
     // Perform first-run signature randomization
-    if (SignatureRandomizer::IsFirstRun()) {
+    bool isFirstRun = SignatureRandomizer::IsFirstRun();
+    std::wstring debugInfo = SignatureRandomizer::GetLastError();
+    xlog::Normal("Checking first run status: %s", isFirstRun ? "TRUE (first run)" : "FALSE (already processed)");
+    xlog::Normal("Debug info: %ws", debugInfo.c_str());
+    
+    if (isFirstRun) {
         xlog::Normal("First run detected - randomizing signatures...");
-        if (SignatureRandomizer::RandomizeSignatures()) {
-            xlog::Normal("Signature randomization completed successfully");
-            MessageBox(nullptr, L"AmalgamLoader has been personalized for this system.\nPlease restart the application.", 
-                      L"First Run Complete", MB_OK | MB_ICONINFORMATION);
-            return 0; // Exit and let user restart
+        
+        // Create a simple progress window that stays visible
+        HWND progressHwnd = CreateWindowEx(
+            WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
+            L"STATIC",
+            L"AmalgamLoader - First Run Setup",
+            WS_POPUP | WS_BORDER | WS_VISIBLE,
+            (GetSystemMetrics(SM_CXSCREEN) - 450) / 2,
+            (GetSystemMetrics(SM_CYSCREEN) - 200) / 2,
+            450, 200,
+            nullptr, nullptr, hInstance, nullptr);
+            
+        if (progressHwnd) {
+            // Create static text control for the message
+            HWND textHwnd = CreateWindow(L"STATIC",
+                L"First Run Setup\n\n"
+                L"AmalgamLoader is personalizing itself for this system.\n"
+                L"This creates unique signatures to avoid detection.\n\n"
+                L"Steps:\n"
+                L"* Copying executable to temp location...\n"
+                L"* Modifying PE structure and resources...\n"
+                L"* Replacing original with personalized version...\n"
+                L"* Will restart automatically when complete...\n\n"
+                L"Please wait, this may take 10-30 seconds...",
+                WS_CHILD | WS_VISIBLE | SS_LEFT,
+                10, 10, 430, 180,
+                progressHwnd, nullptr, hInstance, nullptr);
+                
+            UpdateWindow(progressHwnd);
+            
+            // Set font to make it more readable
+            if (textHwnd) {
+                HFONT hFont = CreateFont(14, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                    DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                    DEFAULT_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+                SendMessage(textHwnd, WM_SETFONT, (WPARAM)hFont, TRUE);
+            }
+        }
+        
+        xlog::Normal("About to call RandomizeSignatures()...");
+        bool randomizeResult = false;
+        
+        try {
+            randomizeResult = SignatureRandomizer::RandomizeSignatures();
+        } catch (...) {
+            xlog::Error("Exception occurred during RandomizeSignatures()");
+        }
+        
+        std::wstring randomizeError = SignatureRandomizer::GetLastError();
+        
+        // Close the progress window
+        if (progressHwnd) {
+            DestroyWindow(progressHwnd);
+        }
+        
+        xlog::Normal("RandomizeSignatures returned: %s", randomizeResult ? "SUCCESS" : "FAILED");
+        xlog::Normal("Last debug message: %ws", randomizeError.c_str());
+        xlog::Normal("Continuing with startup logic...");
+        
+        // For debugging, let's also check what the last PE modification error was
+        if (!randomizeResult) {
+            xlog::Normal("PE modification details: Will check temp files in %TEMP% folder");
+        }
+        
+        if (randomizeResult) {
+            xlog::Normal("Signature randomization completed successfully - restarting...");
+            
+            // Get current executable path
+            wchar_t exePath[MAX_PATH];
+            if (GetModuleFileName(nullptr, exePath, MAX_PATH) > 0) {
+                xlog::Normal("Got executable path: %ws", exePath);
+                
+                // Restart the application automatically
+                STARTUPINFO si = { sizeof(si) };
+                PROCESS_INFORMATION pi = { 0 };
+                
+                if (CreateProcess(exePath, lpCmdLine, nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
+                    CloseHandle(pi.hProcess);
+                    CloseHandle(pi.hThread);
+                    xlog::Normal("Application restarted successfully - exiting current instance");
+                    return 0; // Exit current instance
+                } else {
+                    DWORD createProcessError = GetLastError();
+                    xlog::Warning("Failed to restart application (error %d) - please restart manually", createProcessError);
+                    MessageBox(nullptr, L"AmalgamLoader has been personalized for this system.\nPlease restart the application manually.", 
+                              L"First Run Complete", MB_OK | MB_ICONINFORMATION);
+                    return 0;
+                }
+            } else {
+                xlog::Warning("Failed to get executable path for restart");
+                MessageBox(nullptr, L"AmalgamLoader has been personalized for this system.\nPlease restart the application manually.", 
+                          L"First Run Complete", MB_OK | MB_ICONINFORMATION);
+                return 0;
+            }
         } else {
             std::wstring error = SignatureRandomizer::GetLastError();
             xlog::Warning("Signature randomization failed: %ws - continuing anyway", error.c_str());

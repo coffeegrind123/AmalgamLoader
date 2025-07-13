@@ -1,6 +1,6 @@
 //{{NO_DEPENDENCIES}}
 // Microsoft Visual C++ generated include file.
-// Used by Xenos.rc
+// Used by Loader.rc
 //
 #define IDC_MYICON                      2
 #define IDD_WIN32_TEMPLATE_DIALOG       102
