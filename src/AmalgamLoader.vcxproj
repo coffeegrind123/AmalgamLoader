@@ -36,7 +36,7 @@
     <OutDir>$(SolutionDir)output\$(Platform)\$(Configuration)\</OutDir>
     <IntDir>$(ProjectDir)\AmalgamLoader\$(Platform)\$(Configuration)\</IntDir>
     <TargetName>AmalgamLoader</TargetName>
-    <IncludePath>$(SolutionDir)ext;$(SolutionDir)ext\blackbone\contrib;$(IncludePath)</IncludePath>
+    <IncludePath>$(ProjectDir)..\ext;$(ProjectDir)..\ext\blackbone\src;$(ProjectDir)..\ext\blackbone\contrib;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
