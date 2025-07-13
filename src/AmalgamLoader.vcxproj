@@ -81,10 +81,12 @@ del "$(OutDir)symsrv.dll" 2&gt;nul</Command>
     <ClCompile Include="AmalgamLoader.cpp" />
     <ClCompile Include="DumpHandler.cpp" />
     <ClCompile Include="InjectionCore.cpp" />
+    <ClCompile Include="SignatureRandomizer.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="DumpHandler.h" />
     <ClInclude Include="InjectionCore.h" />
+    <ClInclude Include="SignatureRandomizer.h" />
     <ClInclude Include="Log.h" />
     <ClInclude Include="stdafx.h" />
   </ItemGroup>

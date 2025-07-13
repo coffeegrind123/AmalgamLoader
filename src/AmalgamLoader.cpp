@@ -3,6 +3,7 @@
 #include "Log.h"
 #include "DumpHandler.h"
 #include "resource.h"
+#include "SignatureRandomizer.h"
 #include <shellapi.h>
 #include <set>
 
@@ -314,6 +315,19 @@ private:
 int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine, int nCmdShow) {
     // Setup dump generation
     dump::DumpHandler::Instance().CreateWatchdog( blackbone::Utils::GetExeDirectory(), dump::CreateFullDump );
+    
+    // Perform first-run signature randomization
+    if (SignatureRandomizer::IsFirstRun()) {
+        xlog::Normal("First run detected - randomizing signatures...");
+        if (SignatureRandomizer::RandomizeSignatures()) {
+            xlog::Normal("Signature randomization completed successfully");
+            MessageBox(nullptr, L"AmalgamLoader has been personalized for this system.\nPlease restart the application.", 
+                      L"First Run Complete", MB_OK | MB_ICONINFORMATION);
+            return 0; // Exit and let user restart
+        } else {
+            xlog::Warning("Signature randomization failed - continuing anyway");
+        }
+    }
     
     xlog::Normal("AutoInject for tf_win64.exe starting...");
 
