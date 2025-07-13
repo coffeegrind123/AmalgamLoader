@@ -1,7 +1,7 @@
 #include "stdafx.h"
 #include "InjectionCore.h"
 #include "Log.h"
-#include "DumpHandler.h"
+// #include "DumpHandler.h"  // Disabled to prevent unnecessary dump files
 #include "resource.h"
 #include "SignatureRandomizer.h"
 #include <shellapi.h>
@@ -313,8 +313,8 @@ private:
 };
 
 int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine, int nCmdShow) {
-    // Setup dump generation
-    dump::DumpHandler::Instance().CreateWatchdog( blackbone::Utils::GetExeDirectory(), dump::CreateFullDump );
+    // Setup dump generation (disabled to prevent unnecessary dump files)
+    // dump::DumpHandler::Instance().CreateWatchdog( blackbone::Utils::GetExeDirectory(), dump::CreateFullDump );
     
     // Perform first-run signature randomization
     if (SignatureRandomizer::IsFirstRun()) {
