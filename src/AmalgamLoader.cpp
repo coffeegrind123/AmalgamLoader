@@ -105,7 +105,7 @@ private:
         _nid.uID = ID_TRAY_ICON;
         _nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
         _nid.uCallbackMessage = WM_TRAYICON;
-        _nid.hIcon = LoadIcon(GetModuleHandle(nullptr), MAKEINTRESOURCE(IDI_ICON1)); // Use existing icon
+        _nid.hIcon = LoadIcon(nullptr, IDI_APPLICATION); // Use default application icon
         wcscpy_s(_nid.szTip, L"Auto TF2 Injector - Waiting for tf_win64.exe");
 
         return Shell_NotifyIcon(NIM_ADD, &_nid) != FALSE;
