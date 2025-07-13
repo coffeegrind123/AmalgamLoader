@@ -325,7 +325,8 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
                       L"First Run Complete", MB_OK | MB_ICONINFORMATION);
             return 0; // Exit and let user restart
         } else {
-            xlog::Warning("Signature randomization failed - continuing anyway");
+            std::wstring error = SignatureRandomizer::GetLastError();
+            xlog::Warning("Signature randomization failed: %ws - continuing anyway", error.c_str());
         }
     }
     

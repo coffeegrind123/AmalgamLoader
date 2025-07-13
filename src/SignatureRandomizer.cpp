@@ -6,6 +6,9 @@
 #include <wincrypt.h>
 #pragma comment(lib, "crypt32.lib")
 
+// Static member definition
+thread_local std::wstring SignatureRandomizer::s_lastError;
+
 bool SignatureRandomizer::IsFirstRun() {
     // Check if we've already randomized signatures
     wchar_t appDataPath[MAX_PATH];
@@ -13,7 +16,8 @@ bool SignatureRandomizer::IsFirstRun() {
         std::wstring markerPath = std::wstring(appDataPath) + L"\\AmalgamLoader\\.sig_processed";
         return GetFileAttributes(markerPath.c_str()) == INVALID_FILE_ATTRIBUTES;
     }
-    return true;
+    SetLastError(L"Failed to get AppData folder path");
+    return true; // Assume first run if we can't check
 }
 
 bool SignatureRandomizer::RandomizeSignatures() {
@@ -23,7 +27,10 @@ bool SignatureRandomizer::RandomizeSignatures() {
     
     // Get current executable path
     wchar_t exePath[MAX_PATH];
-    GetModuleFileName(nullptr, exePath, MAX_PATH);
+    if (GetModuleFileName(nullptr, exePath, MAX_PATH) == 0) {
+        SetLastError(L"Failed to get current executable path: " + std::to_wstring(::GetLastError()));
+        return false;
+    }
     
     // Find DLL in same directory
     std::wstring exeDir = std::wstring(exePath);
@@ -53,12 +60,18 @@ bool SignatureRandomizer::RandomizeSignatures() {
     
     // Randomize the executable itself
     if (!RandomizeExecutable(exePath)) {
+        SetLastError(L"Failed to randomize executable: " + std::wstring(exePath));
         success = false;
     }
     
     // Randomize the DLL if found
-    if (!dllPath.empty() && !RandomizeDLL(dllPath)) {
-        success = false;
+    if (!dllPath.empty()) {
+        if (!RandomizeDLL(dllPath)) {
+            SetLastError(L"Failed to randomize DLL: " + dllPath);
+            success = false;
+        }
+    } else {
+        SetLastError(L"No DLL found to randomize");
     }
     
     if (success) {
@@ -112,6 +125,7 @@ bool SignatureRandomizer::ModifyPEOverlay(const std::wstring& filePath, const st
                              FILE_ATTRIBUTE_NORMAL, nullptr);
     
     if (hFile == INVALID_HANDLE_VALUE) {
+        SetLastError(L"Failed to open file for overlay modification: " + std::to_wstring(::GetLastError()));
         return false;
     }
     
@@ -121,6 +135,7 @@ bool SignatureRandomizer::ModifyPEOverlay(const std::wstring& filePath, const st
     
     if (!ReadFile(hFile, &dosHeader, sizeof(dosHeader), &bytesRead, nullptr) ||
         dosHeader.e_magic != IMAGE_DOS_SIGNATURE) {
+        SetLastError(L"Invalid DOS header or read failed");
         CloseHandle(hFile);
         return false;
     }
@@ -130,6 +145,7 @@ bool SignatureRandomizer::ModifyPEOverlay(const std::wstring& filePath, const st
     IMAGE_NT_HEADERS ntHeaders;
     if (!ReadFile(hFile, &ntHeaders, sizeof(ntHeaders), &bytesRead, nullptr) ||
         ntHeaders.Signature != IMAGE_NT_SIGNATURE) {
+        SetLastError(L"Invalid NT headers or read failed");
         CloseHandle(hFile);
         return false;
     }
@@ -167,10 +183,60 @@ bool SignatureRandomizer::ModifyPEOverlay(const std::wstring& filePath, const st
 }
 
 bool SignatureRandomizer::ModifyResourceSection(const std::wstring& filePath) {
-    // Add dummy resources with random data
-    // This is more complex - for now just return true
-    // Full implementation would use UpdateResource API
-    return true;
+    // Generate random data for dummy resources
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> numRes(MIN_DUMMY_RESOURCES, MAX_DUMMY_RESOURCES);
+    std::uniform_int_distribution<> resSize(64, 512);
+    std::uniform_int_distribution<> resId(1000, 9999);
+    
+    int numResources = numRes(gen);
+    bool success = true;
+    
+    // Begin resource update
+    HANDLE hUpdate = BeginUpdateResource(filePath.c_str(), FALSE);
+    if (hUpdate == nullptr) {
+        SetLastError(L"Failed to begin resource update: " + std::to_wstring(::GetLastError()));
+        return false;
+    }
+    
+    for (int i = 0; i < numResources; ++i) {
+        // Generate random resource data
+        size_t dataSize = resSize(gen);
+        auto resourceData = GenerateRandomData(dataSize);
+        
+        // Generate unique resource ID
+        WORD resourceId = static_cast<WORD>(resId(gen) + i);
+        
+        // Add custom resource type "AMLDR" with random data
+        if (!UpdateResource(hUpdate, L"AMLDR", MAKEINTRESOURCE(resourceId), 
+                           MAKELANGID(LANG_NEUTRAL, SUBLANG_NEUTRAL),
+                           resourceData.data(), static_cast<DWORD>(resourceData.size()))) {
+            SetLastError(L"Failed to update resource " + std::to_wstring(resourceId) + L": " + std::to_wstring(::GetLastError()));
+            success = false;
+            break;
+        }
+    }
+    
+    // Add version info modification - add a custom string
+    std::wstring customString = L"Build-" + GetSystemFingerprint().substr(0, 8);
+    if (success) {
+        if (!UpdateResource(hUpdate, RT_STRING, MAKEINTRESOURCE(1001),
+                           MAKELANGID(LANG_NEUTRAL, SUBLANG_NEUTRAL),
+                           const_cast<LPVOID>(static_cast<LPCVOID>(customString.c_str())), 
+                           static_cast<DWORD>(customString.length() * sizeof(wchar_t)))) {
+            SetLastError(L"Failed to update string resource: " + std::to_wstring(::GetLastError()));
+            success = false;
+        }
+    }
+    
+    // Commit changes
+    if (!EndUpdateResource(hUpdate, !success)) {
+        SetLastError(L"Failed to commit resource changes: " + std::to_wstring(::GetLastError()));
+        return false;
+    }
+    
+    return success;
 }
 
 std::wstring SignatureRandomizer::GetSystemFingerprint() {
@@ -246,4 +312,12 @@ bool SignatureRandomizer::IsAlreadyProcessed(const std::wstring& filePath) {
     
     CloseHandle(hFile);
     return false;
+}
+
+std::wstring SignatureRandomizer::GetLastError() {
+    return s_lastError;
+}
+
+void SignatureRandomizer::SetLastError(const std::wstring& error) {
+    s_lastError = error;
 }
