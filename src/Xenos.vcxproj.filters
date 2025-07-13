@@ -160,9 +160,6 @@
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
-    <Image Include="alien.ico">
-      <Filter>Resources</Filter>
-    </Image>
   </ItemGroup>
   <ItemGroup>
     <None Include="..\ext\blackbone\src\BlackBoneDrv\bin\x64\Win7Release\BlackBoneDrv7.sys">

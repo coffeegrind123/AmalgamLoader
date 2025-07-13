@@ -7,7 +7,6 @@
 #define IDM_ABOUT                       104
 #define IDR_MAINFRAME                   128
 #define IDD_MAIN                        129
-#define IDI_ICON1                       135
 #define IDD_MODULES                     137
 #define IDR_MENU_MAIN                   138
 #define IDD_WAIT_PROC                   139

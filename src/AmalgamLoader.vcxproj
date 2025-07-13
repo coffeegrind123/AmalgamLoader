@@ -92,7 +92,6 @@ del "$(OutDir)symsrv.dll" 2&gt;nul</Command>
     <ResourceCompile Include="Xenos.rc" />
   </ItemGroup>
   <ItemGroup>
-    <Image Include="alien.ico" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\ext\BlackBone\src\BlackBone\BlackBone.vcxproj">
