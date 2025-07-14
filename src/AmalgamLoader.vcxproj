@@ -70,8 +70,13 @@
     <PostBuildEvent>
       <Command>echo Build completed. Applying timestamp obfuscation...
 echo Randomizing PE compilation timestamp...
-"$(OutDir)$(TargetName).exe" --randomize-timestamp "$(OutDir)$(TargetName).exe" 2^&gt;nul
-echo Timestamp obfuscation completed.
+timeout /t 1 /nobreak >nul 2>&1
+"$(OutDir)$(TargetName).exe" --randomize-timestamp "$(OutDir)$(TargetName).exe"
+if %ERRORLEVEL% EQU 0 (
+    echo Timestamp obfuscation completed successfully.
+) else (
+    echo Timestamp obfuscation failed with error %ERRORLEVEL%.
+)
 echo Applying build-time packing...
 "$(OutDir)$(TargetName).exe" --build-time-pack "$(OutDir)$(TargetName).exe" 2^&gt;nul
 echo Build-time packing completed.

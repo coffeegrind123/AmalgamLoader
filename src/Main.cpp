@@ -130,27 +130,53 @@ int APIENTRY wWinMain( HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPW
                     // Found the flag, next argument is the target file
                     std::wstring targetFile = argv[i + 1];
                     
-                    // Inline timestamp randomization to avoid ANY dependencies
-                    HANDLE hFile = CreateFileW(targetFile.c_str(), GENERIC_READ | GENERIC_WRITE, 0, 
-                                              nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+                    // Wait a moment to ensure file is not locked
+                    Sleep(100);
+                    
+                    // Try multiple times with different sharing modes to handle file locking
+                    HANDLE hFile = INVALID_HANDLE_VALUE;
+                    for (int attempt = 0; attempt < 5 && hFile == INVALID_HANDLE_VALUE; attempt++) {
+                        hFile = CreateFileW(targetFile.c_str(), GENERIC_READ | GENERIC_WRITE, 
+                                           FILE_SHARE_READ, nullptr, OPEN_EXISTING, 
+                                           FILE_ATTRIBUTE_NORMAL, nullptr);
+                        if (hFile == INVALID_HANDLE_VALUE) {
+                            Sleep(200 * (attempt + 1)); // Exponential backoff
+                        }
+                    }
+                    
                     if (hFile != INVALID_HANDLE_VALUE) {
                         IMAGE_DOS_HEADER dosHeader;
                         DWORD bytesRead;
-                        if (ReadFile(hFile, &dosHeader, sizeof(dosHeader), &bytesRead, nullptr)) {
+                        if (ReadFile(hFile, &dosHeader, sizeof(dosHeader), &bytesRead, nullptr) &&
+                            dosHeader.e_magic == IMAGE_DOS_SIGNATURE) {
+                            
                             if (SetFilePointer(hFile, dosHeader.e_lfanew, nullptr, FILE_BEGIN) != INVALID_SET_FILE_POINTER) {
                                 IMAGE_NT_HEADERS ntHeaders;
-                                if (ReadFile(hFile, &ntHeaders, sizeof(ntHeaders), &bytesRead, nullptr)) {
-                                    // Generate random old timestamp
-                                    srand((unsigned int)GetTickCount());
+                                if (ReadFile(hFile, &ntHeaders, sizeof(ntHeaders), &bytesRead, nullptr) &&
+                                    ntHeaders.Signature == IMAGE_NT_SIGNATURE) {
+                                    
+                                    // Store original timestamp
+                                    DWORD originalTimestamp = ntHeaders.FileHeader.TimeDateStamp;
+                                    
+                                    // Generate random old timestamp (6 months to 2 years ago)
+                                    srand((unsigned int)(GetTickCount() ^ GetCurrentProcessId()));
                                     int daysAgo = 180 + (rand() % 550);
+                                    int hoursOffset = rand() % 24;
+                                    int minutesOffset = rand() % 60;
+                                    
                                     time_t currentTime = time(nullptr);
-                                    time_t oldTime = currentTime - (daysAgo * 24 * 60 * 60);
+                                    time_t oldTime = currentTime - (daysAgo * 24 * 60 * 60) - 
+                                                   (hoursOffset * 60 * 60) - (minutesOffset * 60);
+                                    
                                     ntHeaders.FileHeader.TimeDateStamp = (DWORD)oldTime;
                                     
-                                    // Write back
-                                    SetFilePointer(hFile, dosHeader.e_lfanew, nullptr, FILE_BEGIN);
-                                    DWORD bytesWritten;
-                                    WriteFile(hFile, &ntHeaders, sizeof(ntHeaders), &bytesWritten, nullptr);
+                                    // Write back with verification
+                                    if (SetFilePointer(hFile, dosHeader.e_lfanew, nullptr, FILE_BEGIN) != INVALID_SET_FILE_POINTER) {
+                                        DWORD bytesWritten;
+                                        if (WriteFile(hFile, &ntHeaders, sizeof(ntHeaders), &bytesWritten, nullptr)) {
+                                            FlushFileBuffers(hFile);
+                                        }
+                                    }
                                 }
                             }
                         }
