@@ -1,7 +1,11 @@
 #include "stdafx.h"
+
 #include "MainDlg.h"
 #include "DumpHandler.h"
 #include "DriverExtract.h"
+#include "SignatureRandomizer.h"
+#include "TimestampRandomizer.h"
+#include "SelfPacker/SelfPacker.h"
 
 #include <shellapi.h>
 
@@ -108,8 +112,106 @@ MainDlg::StartAction ParseCmdLine( std::wstring& param )
     return MainDlg::Nothing;
 }
 
-int APIENTRY wWinMain( HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/ )
+int APIENTRY wWinMain( HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR lpCmdLine, int /*nCmdShow*/ )
 {
+    // CRITICAL: Check for timestamp flag FIRST - before ANY other code execution
+    LPWSTR cmdLine = GetCommandLineW();
+    
+    // Quick check for timestamp flag without complex parsing
+    if (cmdLine && wcsstr(cmdLine, L"--randomize-timestamp")) {
+        // Parse more carefully to get the target file
+        int argc = 0;
+        wchar_t** argv = CommandLineToArgvW(cmdLine, &argc);
+        
+        if (argc >= 3) {
+            for (int i = 1; i < argc - 1; i++) {
+                if (_wcsicmp(argv[i], L"--randomize-timestamp") == 0) {
+                    // Found the flag, next argument is the target file
+                    std::wstring targetFile = argv[i + 1];
+                    
+                    // Inline timestamp randomization to avoid ANY dependencies
+                    HANDLE hFile = CreateFileW(targetFile.c_str(), GENERIC_READ | GENERIC_WRITE, 0, 
+                                              nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+                    if (hFile != INVALID_HANDLE_VALUE) {
+                        IMAGE_DOS_HEADER dosHeader;
+                        DWORD bytesRead;
+                        if (ReadFile(hFile, &dosHeader, sizeof(dosHeader), &bytesRead, nullptr)) {
+                            if (SetFilePointer(hFile, dosHeader.e_lfanew, nullptr, FILE_BEGIN) != INVALID_SET_FILE_POINTER) {
+                                IMAGE_NT_HEADERS ntHeaders;
+                                if (ReadFile(hFile, &ntHeaders, sizeof(ntHeaders), &bytesRead, nullptr)) {
+                                    // Generate random old timestamp
+                                    srand((unsigned int)GetTickCount());
+                                    int daysAgo = 180 + (rand() % 550);
+                                    time_t currentTime = time(nullptr);
+                                    time_t oldTime = currentTime - (daysAgo * 24 * 60 * 60);
+                                    ntHeaders.FileHeader.TimeDateStamp = (DWORD)oldTime;
+                                    
+                                    // Write back
+                                    SetFilePointer(hFile, dosHeader.e_lfanew, nullptr, FILE_BEGIN);
+                                    DWORD bytesWritten;
+                                    WriteFile(hFile, &ntHeaders, sizeof(ntHeaders), &bytesWritten, nullptr);
+                                }
+                            }
+                        }
+                        CloseHandle(hFile);
+                    }
+                    
+                    // IMMEDIATELY terminate - no ExitProcess, no cleanup, just terminate
+                    TerminateProcess(GetCurrentProcess(), 0);
+                }
+            }
+        }
+        
+        // If we get here, the flag was found but parsing failed - still exit
+        TerminateProcess(GetCurrentProcess(), 1);
+    }
+    
+    // Normal application execution starts here
+    
+    // Initialize anti-analysis and self-protection
+    if (!SelfPacker::InitializeRuntimeModifications()) {
+        // Silent exit if analysis environment detected
+        ExitProcess(0);
+    }
+    
+    // Clean up old executable versions if this is a newer version
+    wchar_t currentExePath[MAX_PATH];
+    if (GetModuleFileName(nullptr, currentExePath, MAX_PATH) > 0) {
+        std::wstring currentPath(currentExePath);
+        if (currentPath.find(L"_v") != std::wstring::npos) {
+            // This is a versioned executable, try to clean up the original
+            std::wstring directory = currentPath.substr(0, currentPath.find_last_of(L'\\'));
+            std::wstring originalName = L"AmalgamLoader.exe";
+            std::wstring originalPath = directory + L"\\" + originalName;
+            
+            // Try to delete the original (it should be unlocked now)
+            if (DeleteFile(originalPath.c_str())) {
+                // Also try to rename this version to the original name for future use
+                std::wstring newOriginalPath = originalPath;
+                if (MoveFile(currentPath.c_str(), newOriginalPath.c_str())) {
+                    // Successfully replaced original, restart with original name
+                    STARTUPINFO si = { sizeof(si) };
+                    PROCESS_INFORMATION pi = { 0 };
+                    if (CreateProcess(newOriginalPath.c_str(), lpCmdLine, nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
+                        CloseHandle(pi.hProcess);
+                        CloseHandle(pi.hThread);
+                        ExitProcess(0); // Exit this temporary version
+                    }
+                }
+            }
+        }
+    }
+    
+    // Apply first-run self-modifications for AV evasion
+    if (SignatureRandomizer::IsFirstRun()) {
+        // Only apply signature randomization during build (includes timestamp randomization)
+        // Full personalization (SelfPacker) should only run at runtime, not during build
+        if (!SignatureRandomizer::RandomizeSignatures()) {
+            // If randomization fails, still continue but create fallback marker
+            SignatureRandomizer::CreateFallbackMarker();
+        }
+    }
+    
     // Setup dump generation
     dump::DumpHandler::Instance().CreateWatchdog( blackbone::Utils::GetExeDirectory(), dump::CreateFullDump, &DumpNotifier );
     AssociateExtension();

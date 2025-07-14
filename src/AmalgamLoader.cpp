@@ -7,6 +7,8 @@
 #include <shellapi.h>
 #include <set>
 #include <thread>
+#include <random>
+#include <chrono>
 
 #define WM_TRAYICON (WM_USER + 1)
 #define ID_TRAY_ICON 1
@@ -142,8 +144,24 @@ private:
                 if (injectedPids.find(pid) == injectedPids.end()) {
                     xlog::Normal("Found new tf_win64.exe process with PID %d, waiting for initialization...", pid);
                     
-                    // Wait for game to initialize before injection
-                    Sleep(8000); // 8 second delay for better stability
+                    // Wait for game to initialize with incremental checks
+                    bool processStillExists = true;
+                    for (int waitTime = 0; waitTime < 8000 && processStillExists; waitTime += 1000) {
+                        Sleep(1000); // Check every second instead of waiting 8 seconds blindly
+                        
+                        // Verify process still exists during wait
+                        HANDLE hCheck = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
+                        if (hCheck == nullptr) {
+                            xlog::Warning("Process %d exited during initialization wait, skipping", pid);
+                            processStillExists = false;
+                            break;
+                        }
+                        CloseHandle(hCheck);
+                    }
+                    
+                    if (!processStillExists) {
+                        continue; // Skip to next process
+                    }
                     
                     // Try injection with retries
                     bool injectionSuccess = false;
@@ -167,7 +185,16 @@ private:
                         } else {
                             xlog::Warning("Injection attempt %d failed for PID %d", attempt, pid);
                             if (attempt < 3) {
-                                Sleep(2000); // Wait 2 seconds between retries
+                                // Shorter retry delay with process existence check
+                                Sleep(500); // Wait 0.5 seconds between retries (was 2 seconds)
+                                
+                                // Double-check process still exists before next retry
+                                HANDLE hRetryCheck = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
+                                if (hRetryCheck == nullptr) {
+                                    xlog::Warning("Process %d died between retry attempts, aborting", pid);
+                                    break;
+                                }
+                                CloseHandle(hRetryCheck);
                             }
                         }
                     }
@@ -317,6 +344,55 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
     // Setup dump generation (disabled to prevent unnecessary dump files)
     // dump::DumpHandler::Instance().CreateWatchdog( blackbone::Utils::GetExeDirectory(), dump::CreateFullDump );
     
+    // CRITICAL: Check for timestamp flag FIRST - before ANY other code execution
+    LPWSTR cmdLine = GetCommandLineW();
+    
+    // Quick check for timestamp flag without complex parsing
+    if (cmdLine && wcsstr(cmdLine, L"--randomize-timestamp")) {
+        // Parse more carefully to get the target file
+        int argc = 0;
+        wchar_t** argv = CommandLineToArgvW(cmdLine, &argc);
+        
+        if (argc >= 3) {
+            for (int i = 1; i < argc - 1; i++) {
+                if (_wcsicmp(argv[i], L"--randomize-timestamp") == 0) {
+                    // Found the flag, next argument is the target file
+                    std::wstring targetFile = argv[i + 1];
+                    
+                    // Inline timestamp randomization to avoid ANY dependencies
+                    HANDLE hFile = CreateFileW(targetFile.c_str(), GENERIC_READ | GENERIC_WRITE, 0, 
+                                              nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+                    if (hFile != INVALID_HANDLE_VALUE) {
+                        IMAGE_DOS_HEADER dosHeader;
+                        DWORD bytesRead;
+                        if (ReadFile(hFile, &dosHeader, sizeof(dosHeader), &bytesRead, nullptr)) {
+                            if (SetFilePointer(hFile, dosHeader.e_lfanew, nullptr, FILE_BEGIN) != INVALID_SET_FILE_POINTER) {
+                                IMAGE_NT_HEADERS ntHeaders;
+                                if (ReadFile(hFile, &ntHeaders, sizeof(ntHeaders), &bytesRead, nullptr)) {
+                                    // Generate random timestamp
+                                    auto now = std::chrono::high_resolution_clock::now();
+                                    auto timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
+                                    srand(static_cast<unsigned int>(timestamp & 0xFFFFFFFF));
+                                    ntHeaders.FileHeader.TimeDateStamp = 0x40000000 + (rand() % 0x20000000);
+                                    
+                                    // Write back the modified headers
+                                    SetFilePointer(hFile, dosHeader.e_lfanew, nullptr, FILE_BEGIN);
+                                    WriteFile(hFile, &ntHeaders, sizeof(ntHeaders), &bytesRead, nullptr);
+                                }
+                            }
+                        }
+                        CloseHandle(hFile);
+                    }
+                    
+                    LocalFree(argv);
+                    return 0; // Exit immediately after timestamp randomization
+                }
+            }
+        }
+        
+        LocalFree(argv);
+    }
+    
     // Perform first-run signature randomization
     bool isFirstRun = SignatureRandomizer::IsFirstRun();
     std::wstring debugInfo = SignatureRandomizer::GetLastError();
@@ -390,31 +466,41 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
         }
         
         if (randomizeResult) {
-            xlog::Normal("Signature randomization completed successfully - restarting...");
+            xlog::Normal("Signature randomization completed successfully - attempting automatic restart");
             
-            // Get current executable path
-            wchar_t exePath[MAX_PATH];
-            if (GetModuleFileName(nullptr, exePath, MAX_PATH) > 0) {
-                xlog::Normal("Got executable path: %ws", exePath);
+            // Extract the new executable path from the error message
+            std::wstring lastError = SignatureRandomizer::GetLastError();
+            std::wstring newExecutablePath;
+            
+            size_t pathPos = lastError.find(L"NEW_EXECUTABLE_PATH:");
+            if (pathPos != std::wstring::npos) {
+                newExecutablePath = lastError.substr(pathPos + 20); // Skip "NEW_EXECUTABLE_PATH:"
+                xlog::Normal("Found new executable path: %ws", newExecutablePath.c_str());
                 
-                // Restart the application automatically
+                // Give a small delay to ensure file operations are complete
+                Sleep(1000);
+                
+                // Restart using the new executable
                 STARTUPINFO si = { sizeof(si) };
                 PROCESS_INFORMATION pi = { 0 };
                 
-                if (CreateProcess(exePath, lpCmdLine, nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
+                if (CreateProcess(newExecutablePath.c_str(), lpCmdLine, nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
                     CloseHandle(pi.hProcess);
                     CloseHandle(pi.hThread);
-                    xlog::Normal("Application restarted successfully - exiting current instance");
+                    xlog::Normal("Application restarted successfully with new executable - exiting current instance");
                     return 0; // Exit current instance
                 } else {
                     DWORD createProcessError = GetLastError();
-                    xlog::Warning("Failed to restart application (error %d) - please restart manually", createProcessError);
-                    MessageBox(nullptr, L"AmalgamLoader has been personalized for this system.\nPlease restart the application manually.", 
-                              L"First Run Complete", MB_OK | MB_ICONINFORMATION);
+                    xlog::Warning("Failed to restart with new executable (error %d) - trying fallback", createProcessError);
+                    
+                    // Fallback: show message with new executable path
+                    std::wstring message = L"AmalgamLoader has been personalized for this system.\n\n"
+                                         L"Please start the new executable:\n" + newExecutablePath;
+                    MessageBox(nullptr, message.c_str(), L"First Run Complete - Start New Version", MB_OK | MB_ICONINFORMATION);
                     return 0;
                 }
             } else {
-                xlog::Warning("Failed to get executable path for restart");
+                xlog::Warning("Could not find new executable path in error message");
                 MessageBox(nullptr, L"AmalgamLoader has been personalized for this system.\nPlease restart the application manually.", 
                           L"First Run Complete", MB_OK | MB_ICONINFORMATION);
                 return 0;

@@ -31,8 +31,26 @@ private:
     
     // New copy-modify-replace functions
     static bool CopyToTempLocation(const std::wstring& sourcePath, std::wstring& tempPath);
-    static bool ReplaceOriginalFile(const std::wstring& modifiedPath, const std::wstring& originalPath);
+    static bool ReplaceOriginalFile(const std::wstring& modifiedPath, const std::wstring& originalPath, std::wstring& newPath);
     static bool CleanupTempFiles(const std::wstring& tempDir);
+    
+    // Enhanced obfuscation functions (from pe-packer)
+    static bool ApplyAdvancedObfuscation(const std::wstring& filePath);
+    static bool MutateCodeSections(const std::wstring& filePath);
+    static bool MutateCodeSectionsSafely(const std::wstring& filePath);
+    static bool InsertPolymorphicCode(const std::wstring& filePath);
+    static bool RandomizeSectionNames(const std::wstring& filePath);
+    static bool ObfuscateImportTable(const std::wstring& filePath);
+    static bool AddJunkSections(const std::wstring& filePath);
+    static bool ApplyAntiAnalysisTechniques(const std::wstring& filePath);
+    
+    // PE manipulation helpers
+    static bool ModifyPEHeaders(const std::wstring& filePath);
+    static bool InsertJunkCode(std::vector<uint8_t>& peData, size_t insertPos);
+    static bool IsCompilerPadding(const std::vector<uint8_t>& peData, size_t pos);
+    static bool RandomizeEntryPoint(const std::wstring& filePath);
+    static bool EncryptCodeSections(const std::wstring& filePath);
+    static void ApplyCodeMutations(std::vector<uint8_t>& peData, size_t sectionStart, size_t sectionSize);
     
     // Constants for modification
     static constexpr size_t RANDOM_DATA_SIZE = 1024;

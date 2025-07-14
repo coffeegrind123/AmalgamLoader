@@ -63,18 +63,24 @@
       <RandomizedBaseAddress>false</RandomizedBaseAddress>
       <FixedBaseAddress>true</FixedBaseAddress>
       <AdditionalDependencies>Shlwapi.lib;Dbghelp.lib;Comctl32.lib;Shell32.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <UACExecutionLevel>RequireAdministrator</UACExecutionLevel>
+      <UACExecutionLevel>AsInvoker</UACExecutionLevel>
       <ImportLibrary></ImportLibrary>
       <GenerateMapFile>false</GenerateMapFile>
     </Link>
     <PostBuildEvent>
-      <Command>del "$(OutDir)$(TargetName).exp" 2&gt;nul
-del "$(OutDir)$(TargetName).lib" 2&gt;nul
-del "$(OutDir)BlackBone.lib" 2&gt;nul
-del "$(OutDir)BlackBone.pdb" 2&gt;nul
-del "$(OutDir)msdia140.dll" 2&gt;nul
-del "$(OutDir)symsrv.dll" 2&gt;nul</Command>
-      <Message>Cleaning up build files</Message>
+      <Command>echo Build completed. Applying timestamp obfuscation...
+echo Randomizing PE compilation timestamp...
+"$(OutDir)$(TargetName).exe" --randomize-timestamp "$(OutDir)$(TargetName).exe" 2^&gt;nul
+echo Timestamp obfuscation completed.
+echo Cleaning up build artifacts...
+del "$(OutDir)$(TargetName).exp" 2^&gt;nul
+del "$(OutDir)$(TargetName).lib" 2^&gt;nul
+del "$(OutDir)BlackBone.lib" 2^&gt;nul
+del "$(OutDir)BlackBone.pdb" 2^&gt;nul
+del "$(OutDir)msdia140.dll" 2^&gt;nul
+del "$(OutDir)symsrv.dll" 2^&gt;nul
+echo Build post-processing complete.</Command>
+      <Message>Applying timestamp obfuscation and cleaning up build files</Message>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -82,11 +88,30 @@ del "$(OutDir)symsrv.dll" 2&gt;nul</Command>
     <ClCompile Include="DumpHandler.cpp" />
     <ClCompile Include="InjectionCore.cpp" />
     <ClCompile Include="SignatureRandomizer.cpp" />
+    <ClCompile Include="TimestampRandomizer.cpp" />
+    <ClCompile Include="SelfPacker\SelfPacker.cpp" />
+    <ClCompile Include="SelfPacker\adler32.c" />
+    <ClCompile Include="SelfPacker\compress.c" />
+    <ClCompile Include="SelfPacker\crc32.c" />
+    <ClCompile Include="SelfPacker\deflate.c" />
+    <ClCompile Include="SelfPacker\inffast.c" />
+    <ClCompile Include="SelfPacker\inflate.c" />
+    <ClCompile Include="SelfPacker\inftrees.c" />
+    <ClCompile Include="SelfPacker\trees.c" />
+    <ClCompile Include="SelfPacker\uncompr.c" />
+    <ClCompile Include="SelfPacker\zutil.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="DumpHandler.h" />
     <ClInclude Include="InjectionCore.h" />
     <ClInclude Include="SignatureRandomizer.h" />
+    <ClInclude Include="TimestampRandomizer.h" />
+    <ClInclude Include="SelfPacker\SelfPacker.h" />
+    <ClInclude Include="SelfPacker\zlib.h" />
+    <ClInclude Include="SelfPacker\zconf.h" />
+    <ClInclude Include="SelfPacker\deflate.h" />
+    <ClInclude Include="SelfPacker\inflate.h" />
+    <ClInclude Include="SelfPacker\crc32.h" />
     <ClInclude Include="Log.h" />
     <ClInclude Include="stdafx.h" />
   </ItemGroup>
