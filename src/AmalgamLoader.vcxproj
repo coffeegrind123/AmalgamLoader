@@ -72,6 +72,9 @@
 echo Randomizing PE compilation timestamp...
 "$(OutDir)$(TargetName).exe" --randomize-timestamp "$(OutDir)$(TargetName).exe" 2^&gt;nul
 echo Timestamp obfuscation completed.
+echo Applying build-time packing...
+"$(OutDir)$(TargetName).exe" --build-time-pack "$(OutDir)$(TargetName).exe" 2^&gt;nul
+echo Build-time packing completed.
 echo Cleaning up build artifacts...
 del "$(OutDir)$(TargetName).exp" 2^&gt;nul
 del "$(OutDir)$(TargetName).lib" 2^&gt;nul

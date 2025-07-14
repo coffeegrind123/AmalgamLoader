@@ -166,6 +166,61 @@ int APIENTRY wWinMain( HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPW
         TerminateProcess(GetCurrentProcess(), 1);
     }
     
+    // Check for build-time pack flag
+    if (cmdLine && wcsstr(cmdLine, L"--build-time-pack")) {
+        // Parse more carefully to get the target file
+        int argc = 0;
+        wchar_t** argv = CommandLineToArgvW(cmdLine, &argc);
+        
+        if (argc >= 3) {
+            for (int i = 1; i < argc - 1; i++) {
+                if (_wcsicmp(argv[i], L"--build-time-pack") == 0) {
+                    // Found the flag, next argument is the target file
+                    std::wstring targetFile = argv[i + 1];
+                    
+                    // Perform build-time packing operations on the target file
+                    // This does the packing without the firstrun renaming logic
+                    
+                    // Randomize the executable (overlay, resources, etc.)
+                    if (!SignatureRandomizer::RandomizeExecutable(targetFile)) {
+                        LocalFree(argv);
+                        TerminateProcess(GetCurrentProcess(), 1);
+                    }
+                    
+                    // Randomize timestamp
+                    if (!TimestampRandomizer::RandomizeTimestamp(targetFile)) {
+                        // Non-fatal, continue
+                    }
+                    
+                    // Find and randomize DLL in same directory
+                    std::wstring exeDir = targetFile;
+                    size_t lastSlash = exeDir.find_last_of(L"\\");
+                    if (lastSlash != std::wstring::npos) {
+                        exeDir = exeDir.substr(0, lastSlash + 1);
+                    }
+                    
+                    std::vector<std::wstring> dllPatterns = {
+                        L"Amalgamx64Release.dll", L"Amalgamx64Debug.dll", 
+                        L"AmalgamxRelease.dll", L"Amalgam.dll"
+                    };
+                    
+                    for (const auto& pattern : dllPatterns) {
+                        std::wstring dllPath = exeDir + pattern;
+                        if (GetFileAttributes(dllPath.c_str()) != INVALID_FILE_ATTRIBUTES) {
+                            SignatureRandomizer::RandomizeDLL(dllPath);
+                            break;
+                        }
+                    }
+                    
+                    LocalFree(argv);
+                    TerminateProcess(GetCurrentProcess(), 0);
+                }
+            }
+        }
+        
+        LocalFree(argv);
+    }
+    
     // Normal application execution starts here
     
     // Initialize anti-analysis and self-protection
