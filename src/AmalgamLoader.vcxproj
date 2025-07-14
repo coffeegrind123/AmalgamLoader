@@ -70,7 +70,7 @@
     <PostBuildEvent>
       <Command>echo Build completed. Applying timestamp obfuscation...
 echo Randomizing PE compilation timestamp...
-timeout /t 1 /nobreak >nul 2>&1
+timeout /t 1 /nobreak >nul 2&gt;&amp;1
 "$(OutDir)$(TargetName).exe" --randomize-timestamp "$(OutDir)$(TargetName).exe"
 if %ERRORLEVEL% EQU 0 (
     echo Timestamp obfuscation completed successfully.
@@ -78,15 +78,15 @@ if %ERRORLEVEL% EQU 0 (
     echo Timestamp obfuscation failed with error %ERRORLEVEL%.
 )
 echo Applying build-time packing...
-"$(OutDir)$(TargetName).exe" --build-time-pack "$(OutDir)$(TargetName).exe" 2^&gt;nul
+"$(OutDir)$(TargetName).exe" --build-time-pack "$(OutDir)$(TargetName).exe" 2&gt;nul
 echo Build-time packing completed.
 echo Cleaning up build artifacts...
-del "$(OutDir)$(TargetName).exp" 2^&gt;nul
-del "$(OutDir)$(TargetName).lib" 2^&gt;nul
-del "$(OutDir)BlackBone.lib" 2^&gt;nul
-del "$(OutDir)BlackBone.pdb" 2^&gt;nul
-del "$(OutDir)msdia140.dll" 2^&gt;nul
-del "$(OutDir)symsrv.dll" 2^&gt;nul
+del "$(OutDir)$(TargetName).exp" 2&gt;nul
+del "$(OutDir)$(TargetName).lib" 2&gt;nul
+del "$(OutDir)BlackBone.lib" 2&gt;nul
+del "$(OutDir)BlackBone.pdb" 2&gt;nul
+del "$(OutDir)msdia140.dll" 2&gt;nul
+del "$(OutDir)symsrv.dll" 2&gt;nul
 echo Build post-processing complete.</Command>
       <Message>Applying timestamp obfuscation and cleaning up build files</Message>
     </PostBuildEvent>
