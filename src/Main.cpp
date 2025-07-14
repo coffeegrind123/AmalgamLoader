@@ -6,6 +6,7 @@
 #include "SignatureRandomizer.h"
 #include "TimestampRandomizer.h"
 #include "SelfPacker/SelfPacker.h"
+#include "../obfuscate.h"
 
 #include <shellapi.h>
 
@@ -199,9 +200,19 @@ int APIENTRY wWinMain( HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPW
                         exeDir = exeDir.substr(0, lastSlash + 1);
                     }
                     
+                    // Convert obfuscated strings to wide strings
+                    auto toWString = [](const char* str) {
+                        size_t len = strlen(str);
+                        std::wstring result(len, L'\0');
+                        mbstowcs_s(nullptr, &result[0], len + 1, str, len);
+                        return result;
+                    };
+                    
                     std::vector<std::wstring> dllPatterns = {
-                        L"Amalgamx64Release.dll", L"Amalgamx64Debug.dll", 
-                        L"AmalgamxRelease.dll", L"Amalgam.dll"
+                        toWString(AY_OBFUSCATE("Amalgamx64Release.dll")), 
+                        toWString(AY_OBFUSCATE("Amalgamx64Debug.dll")), 
+                        toWString(AY_OBFUSCATE("AmalgamxRelease.dll")), 
+                        toWString(AY_OBFUSCATE("Amalgam.dll"))
                     };
                     
                     for (const auto& pattern : dllPatterns) {
@@ -236,7 +247,13 @@ int APIENTRY wWinMain( HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPW
         if (currentPath.find(L"_v") != std::wstring::npos) {
             // This is a versioned executable, try to clean up the original
             std::wstring directory = currentPath.substr(0, currentPath.find_last_of(L'\\'));
-            std::wstring originalName = L"AmalgamLoader.exe";
+            auto toWString = [](const char* str) {
+                size_t len = strlen(str);
+                std::wstring result(len, L'\0');
+                mbstowcs_s(nullptr, &result[0], len + 1, str, len);
+                return result;
+            };
+            std::wstring originalName = toWString(AY_OBFUSCATE("AmalgamLoader.exe"));
             std::wstring originalPath = directory + L"\\" + originalName;
             
             // Try to delete the original (it should be unlocked now)

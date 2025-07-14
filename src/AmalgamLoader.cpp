@@ -5,6 +5,7 @@
 #include "resource.h"
 #include "SignatureRandomizer.h"
 #include "TimestampRandomizer.h"
+#include "../obfuscate.h"
 #include <shellapi.h>
 #include <set>
 #include <thread>
@@ -135,7 +136,14 @@ private:
         
         while (_running) {
             // Find tf_win64.exe processes
-            auto processes = blackbone::Process::EnumByName(L"tf_win64.exe");
+            auto toWString = [](const char* str) {
+                size_t len = strlen(str);
+                std::wstring result(len, L'\0');
+                mbstowcs_s(nullptr, &result[0], len + 1, str, len);
+                return result;
+            };
+            std::wstring processName = toWString(AY_OBFUSCATE("tf_win64.exe"));
+            auto processes = blackbone::Process::EnumByName(processName.c_str());
             
             bool foundProcess = false;
             for (const auto& pid : processes) {
@@ -228,7 +236,14 @@ private:
                 }
                 
                 // Also clear the set if no TF2 processes exist to start fresh
-                auto tf2Processes = blackbone::Process::EnumByName(L"tf_win64.exe");
+                auto toWString = [](const char* str) {
+                    size_t len = strlen(str);
+                    std::wstring result(len, L'\0');
+                    mbstowcs_s(nullptr, &result[0], len + 1, str, len);
+                    return result;
+                };
+                std::wstring tf2ProcessName = toWString(AY_OBFUSCATE("tf_win64.exe"));
+                auto tf2Processes = blackbone::Process::EnumByName(tf2ProcessName.c_str());
                 if (tf2Processes.empty()) {
                     if (!injectedPids.empty()) {
                         xlog::Normal("No tf_win64.exe processes found, clearing injection tracking");
@@ -427,9 +442,19 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
                         exeDir = exeDir.substr(0, lastSlash + 1);
                     }
                     
+                    // Convert obfuscated strings to wide strings
+                    auto toWString = [](const char* str) {
+                        size_t len = strlen(str);
+                        std::wstring result(len, L'\0');
+                        mbstowcs_s(nullptr, &result[0], len + 1, str, len);
+                        return result;
+                    };
+                    
                     std::vector<std::wstring> dllPatterns = {
-                        L"Amalgamx64Release.dll", L"Amalgamx64Debug.dll", 
-                        L"AmalgamxRelease.dll", L"Amalgam.dll"
+                        toWString(AY_OBFUSCATE("Amalgamx64Release.dll")), 
+                        toWString(AY_OBFUSCATE("Amalgamx64Debug.dll")), 
+                        toWString(AY_OBFUSCATE("AmalgamxRelease.dll")), 
+                        toWString(AY_OBFUSCATE("Amalgam.dll"))
                     };
                     
                     for (const auto& pattern : dllPatterns) {
