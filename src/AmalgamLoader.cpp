@@ -339,6 +339,14 @@ private:
             return false;
         }
         
+        // Verify process is still running and accessible
+        DWORD exitCode = 0;
+        if (!GetExitCodeProcess(hProcess, &exitCode) || exitCode != STILL_ACTIVE) {
+            xlog::Warning("Process %d is no longer active or accessible", pid);
+            CloseHandle(hProcess);
+            return false;
+        }
+        
         // Check if process is being debugged (anti-cheat might be active)
         BOOL isDebuggerPresent = FALSE;
         if (CheckRemoteDebuggerPresent(hProcess, &isDebuggerPresent) && isDebuggerPresent) {
@@ -350,7 +358,9 @@ private:
         if (hProcessWrite == nullptr) {
             DWORD error = GetLastError();
             xlog::Warning("Process %d appears to be protected - limited access (error 0x%X)", pid, error);
-            // Continue anyway - some protection is expected
+            // For now, skip injection if we can't get full access
+            CloseHandle(hProcess);
+            return false;
         } else {
             CloseHandle(hProcessWrite);
             xlog::Normal("Process %d access verification passed", pid);
@@ -406,7 +416,17 @@ private:
         const char* methodName = (injectType == Normal) ? "Normal" : 
                                 (injectType == Manual) ? "Manual" : "Kernel";
         
-        NTSTATUS status = _core.InjectMultiple(&context);
+        xlog::Normal("About to call %s injection for PID %d", methodName, pid);
+        
+        NTSTATUS status = 0xC0000001; // STATUS_UNSUCCESSFUL
+        try {
+            status = _core.InjectMultiple(&context);
+            xlog::Normal("Injection call completed for PID %d, status: 0x%X", pid, status);
+        }
+        catch (...) {
+            xlog::Error("Exception occurred during injection for PID %d", pid);
+            return false;
+        }
         
         if (NT_SUCCESS(status)) {
             xlog::Normal("%s injection successful for PID %d", methodName, pid);
