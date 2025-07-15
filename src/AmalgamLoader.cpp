@@ -11,6 +11,7 @@
 #include <thread>
 #include <random>
 #include <chrono>
+#include <psapi.h>
 
 #define WM_TRAYICON (WM_USER + 1)
 #define ID_TRAY_ICON 1
@@ -153,28 +154,65 @@ private:
                 if (injectedPids.find(pid) == injectedPids.end()) {
                     xlog::Normal("Found new tf_win64.exe process with PID %d, waiting for initialization...", pid);
                     
-                    // Wait for game to initialize with incremental checks
+                    // Enhanced process stability detection and initialization wait
                     bool processStillExists = true;
-                    for (int waitTime = 0; waitTime < 8000 && processStillExists; waitTime += 1000) {
-                        Sleep(1000); // Check every second instead of waiting 8 seconds blindly
+                    bool processStable = false;
+                    int stableCount = 0;
+                    const int REQUIRED_STABLE_CHECKS = 3;
+                    const int MAX_WAIT_TIME = 15000; // Increased from 8 seconds to 15 seconds
+                    
+                    for (int waitTime = 0; waitTime < MAX_WAIT_TIME && processStillExists && !processStable; waitTime += 1000) {
+                        Sleep(1000);
                         
-                        // Verify process still exists during wait
-                        HANDLE hCheck = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
+                        // Enhanced process existence and stability check
+                        HANDLE hCheck = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid);
                         if (hCheck == nullptr) {
                             xlog::Warning("Process %d exited during initialization wait, skipping", pid);
                             processStillExists = false;
                             break;
                         }
+                        
+                        // Check if process has loaded critical modules (indicates stability)
+                        HMODULE hMods[1024];
+                        DWORD cbNeeded;
+                        bool hasCriticalModules = false;
+                        
+                        if (EnumProcessModules(hCheck, hMods, sizeof(hMods), &cbNeeded)) {
+                            DWORD moduleCount = cbNeeded / sizeof(HMODULE);
+                            if (moduleCount > 10) { // TF2 loads many modules, 10+ indicates partial initialization
+                                hasCriticalModules = true;
+                            }
+                        }
+                        
                         CloseHandle(hCheck);
+                        
+                        if (hasCriticalModules) {
+                            stableCount++;
+                            xlog::Normal("Process %d stability check %d/%d passed", pid, stableCount, REQUIRED_STABLE_CHECKS);
+                            if (stableCount >= REQUIRED_STABLE_CHECKS) {
+                                processStable = true;
+                                xlog::Normal("Process %d determined to be stable after %d seconds", pid, waitTime / 1000);
+                            }
+                        } else {
+                            stableCount = 0; // Reset counter if stability check fails
+                            xlog::Normal("Process %d still initializing (module count low)", pid);
+                        }
                     }
                     
                     if (!processStillExists) {
                         continue; // Skip to next process
                     }
                     
-                    // Try injection with retries
+                    if (!processStable) {
+                        xlog::Warning("Process %d did not stabilize within %d seconds, attempting injection anyway", pid, MAX_WAIT_TIME / 1000);
+                    }
+                    
+                    // Try injection with improved retry strategy
                     bool injectionSuccess = false;
-                    for (int attempt = 1; attempt <= 3; attempt++) {
+                    const int MAX_ATTEMPTS = 5; // Increased from 3 to 5
+                    const int baseDelay = 200; // Base delay in ms
+                    
+                    for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
                         // Verify process still exists before each attempt
                         HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
                         if (hProcess == nullptr) {
@@ -183,9 +221,24 @@ private:
                         }
                         CloseHandle(hProcess);
                         
-                        xlog::Normal("Injection attempt %d/3 for PID %d", attempt, pid);
+                        xlog::Normal("Injection attempt %d/%d for PID %d", attempt, MAX_ATTEMPTS, pid);
                         
-                        if (InjectIntoProcess(pid)) {
+                        // Try different injection methods on different attempts
+                        bool injectResult = false;
+                        if (attempt <= 3) {
+                            // First 3 attempts use normal injection
+                            injectResult = InjectIntoProcess(pid, Normal);
+                        } else if (attempt == 4) {
+                            // 4th attempt uses manual mapping for better stealth
+                            xlog::Normal("Attempting manual mapping injection for PID %d", pid);
+                            injectResult = InjectIntoProcess(pid, Manual);
+                        } else {
+                            // Final attempt uses kernel injection if available
+                            xlog::Normal("Attempting kernel injection for PID %d", pid);
+                            injectResult = InjectIntoProcess(pid, Kernel_Thread);
+                        }
+                        
+                        if (injectResult) {
                             injectedPids.insert(pid);
                             UpdateTrayTooltip(L"Auto TF2 Injector - Injected into tf_win64.exe");
                             xlog::Normal("Successfully injected into PID %d on attempt %d", pid, attempt);
@@ -193,9 +246,14 @@ private:
                             break;
                         } else {
                             xlog::Warning("Injection attempt %d failed for PID %d", attempt, pid);
-                            if (attempt < 3) {
-                                // Shorter retry delay with process existence check
-                                Sleep(500); // Wait 0.5 seconds between retries (was 2 seconds)
+                            if (attempt < MAX_ATTEMPTS) {
+                                // Exponential backoff with randomization
+                                int delay = baseDelay * (1 << (attempt - 1)); // 200ms, 400ms, 800ms, 1600ms
+                                int randomOffset = rand() % 100; // Add 0-100ms random offset
+                                delay += randomOffset;
+                                
+                                xlog::Normal("Waiting %dms before next attempt", delay);
+                                Sleep(delay);
                                 
                                 // Double-check process still exists before next retry
                                 HANDLE hRetryCheck = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
@@ -209,7 +267,7 @@ private:
                     }
                     
                     if (!injectionSuccess) {
-                        xlog::Error("Failed to inject into PID %d after 3 attempts", pid);
+                        xlog::Error("Failed to inject into PID %d after %d attempts", pid, MAX_ATTEMPTS);
                     }
                 }
             }
@@ -258,13 +316,20 @@ private:
         return 0;
     }
 
-    bool InjectIntoProcess(DWORD pid) {
-        // Verify process is still running before attempting injection
-        HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
+    bool InjectIntoProcess(DWORD pid, MapMode injectType = Normal) {
+        // Enhanced process verification with additional checks
+        HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid);
         if (hProcess == nullptr) {
             xlog::Warning("Cannot inject into PID %d - process no longer exists", pid);
             return false;
         }
+        
+        // Check if process is being debugged (anti-cheat might be active)
+        BOOL isDebuggerPresent = FALSE;
+        if (CheckRemoteDebuggerPresent(hProcess, &isDebuggerPresent) && isDebuggerPresent) {
+            xlog::Warning("Process %d is being debugged, injection may fail", pid);
+        }
+        
         CloseHandle(hProcess);
         
         // Create injection context
@@ -290,17 +355,49 @@ private:
 
         context.images.push_back(img);
 
-        // Use normal injection for maximum compatibility with thread-creating DLLs
-        context.cfg.injectMode = Normal;
+        // Set injection method based on parameter
+        context.cfg.injectMode = (uint32_t)injectType;
         context.cfg.mmapFlags = 0;
+        
+        // Adjust settings based on injection type
+        switch (injectType) {
+            case Normal:
+                // Standard injection settings
+                break;
+            case Manual:
+                // Manual mapping for better stealth
+                context.cfg.erasePE = true; // Erase PE header for stealth
+                context.cfg.unlink = true;  // Unlink from PEB
+                break;
+            case Kernel_Thread:
+                // Kernel-mode injection settings
+                context.cfg.krnHandle = true;
+                break;
+            default:
+                break;
+        }
+        
+        const char* methodName = (injectType == Normal) ? "Normal" : 
+                                (injectType == Manual) ? "Manual" : "Kernel";
+        
         NTSTATUS status = _core.InjectMultiple(&context);
         
         if (NT_SUCCESS(status)) {
-            xlog::Normal("Normal injection successful for PID %d", pid);
+            xlog::Normal("%s injection successful for PID %d", methodName, pid);
             return true;
         }
         
-        xlog::Error("Normal injection failed for PID %d, status: 0x%X", pid, status);
+        // Enhanced error reporting
+        std::string errorDescription = "Unknown error";
+        if (status == 0xC000000D) {
+            errorDescription = "Invalid parameter - process may be in transitional state";
+        } else if (status == 0xC0000034) {
+            errorDescription = "Object name not found - process handle became invalid";
+        } else if (status == 0xC0000005) {
+            errorDescription = "Access denied - insufficient privileges or anti-cheat protection";
+        }
+        
+        xlog::Error("%s injection failed for PID %d, status: 0x%X (%s)", methodName, pid, status, errorDescription.c_str());
         return false;
     }
 
