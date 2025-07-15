@@ -122,6 +122,9 @@ echo Build post-processing complete.</Command>
     <ClInclude Include="SelfPacker\crc32.h" />
     <ClInclude Include="Log.h" />
     <ClInclude Include="stdafx.h" />
+    <ClInclude Include="..\cmut.hxx" />
+    <ClInclude Include="..\obfuscate.h" />
+    <ClInclude Include="..\obfuscate_extended.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Loader.rc" />
