@@ -1,5 +1,4 @@
 #include "stdafx.h"
-#include "InjectionCore.h"
 #include "Log.h"
 // #include "DumpHandler.h"  // Disabled to prevent unnecessary dump files
 #include "resource.h"
@@ -22,16 +21,21 @@ class AutoInject {
 private:
     HWND _hWnd;
     NOTIFYICONDATA _nid;
-    InjectionCore _core;
     bool _running;
     HANDLE _monitorThread;
     std::wstring _targetDllPath;
 
 public:
-    AutoInject() : _core(_hWnd), _running(false), _monitorThread(nullptr) {
+    AutoInject() : _running(false), _monitorThread(nullptr) {
         // Find DLL to inject (look for any DLL in current directory)
-        auto currentDir = blackbone::Utils::GetExeDirectory();
-        _targetDllPath = FindDllInDirectory(currentDir);
+        wchar_t currentDir[MAX_PATH];
+        GetModuleFileNameW(nullptr, currentDir, MAX_PATH);
+        std::wstring currentDirStr(currentDir);
+        size_t lastSlash = currentDirStr.find_last_of(L"\\");
+        if (lastSlash != std::wstring::npos) {
+            currentDirStr = currentDirStr.substr(0, lastSlash);
+        }
+        _targetDllPath = FindDllInDirectory(currentDirStr);
         
         if (_targetDllPath.empty()) {
             // If no DLL found, we'll just exit
@@ -91,6 +95,44 @@ public:
     }
 
 private:
+    std::vector<DWORD> EnumProcessesByName(const wchar_t* processName) {
+        std::vector<DWORD> result;
+        DWORD processes[1024];
+        DWORD cbNeeded;
+        
+        if (EnumProcesses(processes, sizeof(processes), &cbNeeded)) {
+            DWORD processCount = cbNeeded / sizeof(DWORD);
+            
+            for (DWORD i = 0; i < processCount; i++) {
+                HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, processes[i]);
+                if (hProcess != nullptr) {
+                    wchar_t processNameBuffer[MAX_PATH];
+                    if (GetModuleBaseName(hProcess, nullptr, processNameBuffer, MAX_PATH)) {
+                        if (_wcsicmp(processNameBuffer, processName) == 0) {
+                            result.push_back(processes[i]);
+                        }
+                    }
+                    CloseHandle(hProcess);
+                }
+            }
+        }
+        return result;
+    }
+    
+    std::vector<DWORD> EnumAllProcesses() {
+        std::vector<DWORD> result;
+        DWORD processes[1024];
+        DWORD cbNeeded;
+        
+        if (EnumProcesses(processes, sizeof(processes), &cbNeeded)) {
+            DWORD processCount = cbNeeded / sizeof(DWORD);
+            for (DWORD i = 0; i < processCount; i++) {
+                result.push_back(processes[i]);
+            }
+        }
+        return result;
+    }
+
     std::wstring FindDllInDirectory(const std::wstring& directory) {
         WIN32_FIND_DATA findData;
         std::wstring searchPath = directory + L"\\*.dll";
@@ -144,7 +186,7 @@ private:
                 return result;
             };
             std::wstring processName = toWString(AY_OBFUSCATE("tf_win64.exe"));
-            auto processes = blackbone::Process::EnumByName(processName.c_str());
+            auto processes = EnumProcessesByName(processName.c_str());
             
             bool foundProcess = false;
             for (const auto& pid : processes) {
@@ -249,8 +291,8 @@ private:
                         
                         xlog::Normal("Injection attempt %d/%d for PID %d", attempt, MAX_ATTEMPTS, pid);
                         
-                        // Use normal injection
-                        bool injectResult = InjectIntoProcess(pid, Normal);
+                        // Use simple injection
+                        bool injectResult = InjectIntoProcess(pid);
                         
                         if (injectResult) {
                             injectedPids.insert(pid);
@@ -290,7 +332,7 @@ private:
                 UpdateTrayTooltip(L"Auto TF2 Injector - Waiting for tf_win64.exe");
                 
                 // Clean up injected PIDs list of processes that no longer exist
-                auto allProcesses = blackbone::Process::EnumByName(L"");
+                auto allProcesses = EnumAllProcesses();
                 std::set<DWORD> currentPids;
                 for (const auto& pid : allProcesses) {
                     currentPids.insert(pid);
@@ -315,7 +357,7 @@ private:
                     return result;
                 };
                 std::wstring tf2ProcessName = toWString(AY_OBFUSCATE("tf_win64.exe"));
-                auto tf2Processes = blackbone::Process::EnumByName(tf2ProcessName.c_str());
+                auto tf2Processes = EnumProcessesByName(tf2ProcessName.c_str());
                 if (tf2Processes.empty()) {
                     if (!injectedPids.empty()) {
                         xlog::Normal("No tf_win64.exe processes found, clearing injection tracking");
@@ -330,7 +372,7 @@ private:
         return 0;
     }
 
-    bool InjectIntoProcess(DWORD pid, MapMode injectType = Normal) {
+    bool InjectIntoProcess(DWORD pid) {
         xlog::Normal("Using simple CreateRemoteThread injection for PID %d", pid);
         
         // Get full process access
