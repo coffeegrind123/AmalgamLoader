@@ -61,10 +61,14 @@ private:
             logLevel = xlog::LogLevel::verbose;
         }
         
-        // Write to log
+        // Write to log only, no dialogs for silent operation
         if (logLevel < xlog::LogLevel::verbose)
             xlog::Logger::Instance().DoLog( logLevel, "%ls", msg.c_str() );
 
-        return MessageBoxW( parent, msg.c_str(), title.c_str(), uType );
+        // Return appropriate values without showing dialogs
+        if (type == Question)
+            return IDNO; // Default to "No" for questions
+        else
+            return IDOK; // Default to "OK" for other dialogs
     }
 };

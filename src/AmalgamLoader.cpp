@@ -35,7 +35,6 @@ public:
         if (_targetDllPath.empty()) {
             // If no DLL found, we'll just exit
             xlog::Error("No DLL found to inject");
-            MessageBox(nullptr, L"No DLL found in current directory for injection", L"Error", MB_OK | MB_ICONERROR);
             exit(1);
         }
         
@@ -223,20 +222,8 @@ private:
                         
                         xlog::Normal("Injection attempt %d/%d for PID %d", attempt, MAX_ATTEMPTS, pid);
                         
-                        // Try different injection methods on different attempts
-                        bool injectResult = false;
-                        if (attempt <= 3) {
-                            // First 3 attempts use normal injection
-                            injectResult = InjectIntoProcess(pid, Normal);
-                        } else if (attempt == 4) {
-                            // 4th attempt uses manual mapping for better stealth
-                            xlog::Normal("Attempting manual mapping injection for PID %d", pid);
-                            injectResult = InjectIntoProcess(pid, Manual);
-                        } else {
-                            // Final attempt uses kernel injection if available
-                            xlog::Normal("Attempting kernel injection for PID %d", pid);
-                            injectResult = InjectIntoProcess(pid, Kernel_Thread);
-                        }
+                        // Use normal injection for all attempts
+                        bool injectResult = InjectIntoProcess(pid, Normal);
                         
                         if (injectResult) {
                             injectedPids.insert(pid);
@@ -702,16 +689,13 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
                     DWORD createProcessError = GetLastError();
                     xlog::Warning("Failed to restart with new executable (error %d) - trying fallback", createProcessError);
                     
-                    // Fallback: show message with new executable path
-                    std::wstring message = L"AmalgamLoader has been personalized for this system.\n\n"
-                                         L"Please start the new executable:\n" + newExecutablePath;
-                    MessageBox(nullptr, message.c_str(), L"First Run Complete - Start New Version", MB_OK | MB_ICONINFORMATION);
+                    // Fallback: log message about new executable path
+                    xlog::Normal("AmalgamLoader has been personalized for this system. New executable: %ls", newExecutablePath.c_str());
                     return 0;
                 }
             } else {
                 xlog::Warning("Could not find new executable path in error message");
-                MessageBox(nullptr, L"AmalgamLoader has been personalized for this system.\nPlease restart the application manually.", 
-                          L"First Run Complete", MB_OK | MB_ICONINFORMATION);
+                xlog::Normal("AmalgamLoader has been personalized for this system. Please restart the application manually.");
                 return 0;
             }
         } else {
@@ -725,7 +709,7 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
     AutoInject injector;
     
     if (!injector.Initialize()) {
-        MessageBox(nullptr, L"Failed to initialize auto-injector", L"Error", MB_OK | MB_ICONERROR);
+        xlog::Error("Failed to initialize auto-injector");
         return 1;
     }
 
