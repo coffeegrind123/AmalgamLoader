@@ -12,6 +12,7 @@
 #include <random>
 #include <chrono>
 #include <psapi.h>
+#pragma comment(lib, "psapi.lib")
 
 #define WM_TRAYICON (WM_USER + 1)
 #define ID_TRAY_ICON 1
@@ -157,8 +158,8 @@ private:
                     bool processStillExists = true;
                     bool processStable = false;
                     int stableCount = 0;
-                    const int REQUIRED_STABLE_CHECKS = 3;
-                    const int MAX_WAIT_TIME = 15000; // Increased from 8 seconds to 15 seconds
+                    const int REQUIRED_STABLE_CHECKS = 5; // Increased from 3 to 5
+                    const int MAX_WAIT_TIME = 30000; // Increased to 30 seconds for better stability
                     
                     for (int waitTime = 0; waitTime < MAX_WAIT_TIME && processStillExists && !processStable; waitTime += 1000) {
                         Sleep(1000);
@@ -171,14 +172,31 @@ private:
                             break;
                         }
                         
-                        // Check if process has loaded critical modules (indicates stability)
+                        // Check if process has loaded critical TF2 modules (indicates readiness for injection)
                         HMODULE hMods[1024];
                         DWORD cbNeeded;
                         bool hasCriticalModules = false;
+                        bool hasEngineModule = false;
                         
                         if (EnumProcessModules(hCheck, hMods, sizeof(hMods), &cbNeeded)) {
                             DWORD moduleCount = cbNeeded / sizeof(HMODULE);
-                            if (moduleCount > 10) { // TF2 loads many modules, 10+ indicates partial initialization
+                            
+                            // Check for specific TF2 modules that indicate readiness
+                            for (DWORD i = 0; i < moduleCount; i++) {
+                                wchar_t moduleName[MAX_PATH];
+                                if (GetModuleBaseName(hCheck, hMods[i], moduleName, MAX_PATH)) {
+                                    std::wstring moduleStr(moduleName);
+                                    
+                                    // Look for engine.dll - critical TF2 module
+                                    if (moduleStr.find(L"engine.dll") != std::wstring::npos) {
+                                        hasEngineModule = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            
+                            // Process is ready if it has engine.dll and sufficient module count
+                            if (hasEngineModule && moduleCount > 15) {
                                 hasCriticalModules = true;
                             }
                         }
@@ -187,14 +205,22 @@ private:
                         
                         if (hasCriticalModules) {
                             stableCount++;
-                            xlog::Normal("Process %d stability check %d/%d passed", pid, stableCount, REQUIRED_STABLE_CHECKS);
+                            xlog::Normal("Process %d stability check %d/%d passed (engine.dll loaded, modules ready)", pid, stableCount, REQUIRED_STABLE_CHECKS);
                             if (stableCount >= REQUIRED_STABLE_CHECKS) {
                                 processStable = true;
-                                xlog::Normal("Process %d determined to be stable after %d seconds", pid, waitTime / 1000);
+                                xlog::Normal("Process %d determined to be stable and injection-ready after %d seconds", pid, waitTime / 1000);
+                                
+                                // Additional wait for anti-cheat initialization to complete
+                                xlog::Normal("Waiting additional 3 seconds for anti-cheat initialization");
+                                Sleep(3000);
                             }
                         } else {
                             stableCount = 0; // Reset counter if stability check fails
-                            xlog::Normal("Process %d still initializing (module count low)", pid);
+                            if (hasEngineModule) {
+                                xlog::Normal("Process %d has engine.dll but insufficient modules loaded", pid);
+                            } else {
+                                xlog::Normal("Process %d still initializing (engine.dll not loaded yet)", pid);
+                            }
                         }
                     }
                     
@@ -203,13 +229,14 @@ private:
                     }
                     
                     if (!processStable) {
-                        xlog::Warning("Process %d did not stabilize within %d seconds, attempting injection anyway", pid, MAX_WAIT_TIME / 1000);
+                        xlog::Warning("Process %d did not stabilize within %d seconds, skipping injection", pid, MAX_WAIT_TIME / 1000);
+                        continue; // Skip injection if process never stabilized
                     }
                     
-                    // Try injection with improved retry strategy
+                    // Try injection with improved retry strategy - only if process is stable
                     bool injectionSuccess = false;
-                    const int MAX_ATTEMPTS = 5; // Increased from 3 to 5
-                    const int baseDelay = 200; // Base delay in ms
+                    const int MAX_ATTEMPTS = 3; // Reduced back to 3 since we have better stability detection
+                    const int baseDelay = 500; // Increased base delay
                     
                     for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
                         // Verify process still exists before each attempt
@@ -304,10 +331,11 @@ private:
     }
 
     bool InjectIntoProcess(DWORD pid, MapMode injectType = Normal) {
-        // Enhanced process verification with additional checks
+        // Enhanced process verification with comprehensive protection checks
         HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid);
         if (hProcess == nullptr) {
-            xlog::Warning("Cannot inject into PID %d - process no longer exists", pid);
+            DWORD error = GetLastError();
+            xlog::Warning("Cannot open process PID %d - error 0x%X (process may be protected)", pid, error);
             return false;
         }
         
@@ -315,6 +343,17 @@ private:
         BOOL isDebuggerPresent = FALSE;
         if (CheckRemoteDebuggerPresent(hProcess, &isDebuggerPresent) && isDebuggerPresent) {
             xlog::Warning("Process %d is being debugged, injection may fail", pid);
+        }
+        
+        // Try to get more comprehensive access to verify process state
+        HANDLE hProcessWrite = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid);
+        if (hProcessWrite == nullptr) {
+            DWORD error = GetLastError();
+            xlog::Warning("Process %d appears to be protected - limited access (error 0x%X)", pid, error);
+            // Continue anyway - some protection is expected
+        } else {
+            CloseHandle(hProcessWrite);
+            xlog::Normal("Process %d access verification passed", pid);
         }
         
         CloseHandle(hProcess);
