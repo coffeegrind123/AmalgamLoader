@@ -331,142 +331,108 @@ private:
     }
 
     bool InjectIntoProcess(DWORD pid, MapMode injectType = Normal) {
-        // Enhanced process verification with comprehensive protection checks
-        HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid);
+        xlog::Normal("Using simple CreateRemoteThread injection for PID %d", pid);
+        
+        // Get full process access
+        HANDLE hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid);
         if (hProcess == nullptr) {
             DWORD error = GetLastError();
-            xlog::Warning("Cannot open process PID %d - error 0x%X (process may be protected)", pid, error);
+            xlog::Error("Cannot open process PID %d for injection - error 0x%X", pid, error);
             return false;
         }
         
-        // Verify process is still running and accessible
-        DWORD exitCode = 0;
-        if (!GetExitCodeProcess(hProcess, &exitCode) || exitCode != STILL_ACTIVE) {
-            xlog::Warning("Process %d is no longer active or accessible", pid);
-            CloseHandle(hProcess);
-            return false;
-        }
+        // Convert DLL path to char*
+        std::string dllPathA;
+        dllPathA.resize(WideCharToMultiByte(CP_UTF8, 0, _targetDllPath.c_str(), -1, nullptr, 0, nullptr, nullptr));
+        WideCharToMultiByte(CP_UTF8, 0, _targetDllPath.c_str(), -1, &dllPathA[0], dllPathA.size(), nullptr, nullptr);
+        dllPathA.resize(strlen(dllPathA.c_str())); // Remove null terminator from resize
         
-        // Check if process is being debugged (anti-cheat might be active)
-        BOOL isDebuggerPresent = FALSE;
-        if (CheckRemoteDebuggerPresent(hProcess, &isDebuggerPresent) && isDebuggerPresent) {
-            xlog::Warning("Process %d is being debugged, injection may fail", pid);
-        }
+        xlog::Normal("Injecting DLL: %s", dllPathA.c_str());
         
-        // Try to get more comprehensive access to verify process state
-        HANDLE hProcessWrite = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid);
-        if (hProcessWrite == nullptr) {
+        // Allocate memory for DLL path in target process
+        LPVOID pDllPath = VirtualAllocEx(hProcess, nullptr, dllPathA.length() + 1, 
+                                        MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+        if (pDllPath == nullptr) {
             DWORD error = GetLastError();
-            xlog::Warning("Process %d appears to be protected - limited access (error 0x%X)", pid, error);
-            // For now, skip injection if we can't get full access
+            xlog::Error("VirtualAllocEx failed for PID %d - error 0x%X", pid, error);
             CloseHandle(hProcess);
             return false;
-        } else {
-            CloseHandle(hProcessWrite);
-            xlog::Normal("Process %d access verification passed", pid);
         }
         
+        // Write DLL path to target process memory
+        SIZE_T bytesWritten = 0;
+        if (!WriteProcessMemory(hProcess, pDllPath, dllPathA.c_str(), dllPathA.length() + 1, &bytesWritten)) {
+            DWORD error = GetLastError();
+            xlog::Error("WriteProcessMemory failed for PID %d - error 0x%X", pid, error);
+            VirtualFreeEx(hProcess, pDllPath, 0, MEM_RELEASE);
+            CloseHandle(hProcess);
+            return false;
+        }
+        
+        // Get LoadLibraryA address from kernel32.dll
+        HMODULE hKernel32 = GetModuleHandleA("kernel32.dll");
+        if (hKernel32 == nullptr) {
+            xlog::Error("Cannot get kernel32.dll handle for PID %d", pid);
+            VirtualFreeEx(hProcess, pDllPath, 0, MEM_RELEASE);
+            CloseHandle(hProcess);
+            return false;
+        }
+        
+        FARPROC pLoadLibraryA = GetProcAddress(hKernel32, "LoadLibraryA");
+        if (pLoadLibraryA == nullptr) {
+            xlog::Error("Cannot get LoadLibraryA address for PID %d", pid);
+            VirtualFreeEx(hProcess, pDllPath, 0, MEM_RELEASE);
+            CloseHandle(hProcess);
+            return false;
+        }
+        
+        xlog::Normal("Creating remote thread for PID %d", pid);
+        
+        // Create remote thread to call LoadLibraryA
+        HANDLE hThread = CreateRemoteThread(hProcess, nullptr, 0, 
+                                          (LPTHREAD_START_ROUTINE)pLoadLibraryA, 
+                                          pDllPath, 0, nullptr);
+        if (hThread == nullptr) {
+            DWORD error = GetLastError();
+            xlog::Error("CreateRemoteThread failed for PID %d - error 0x%X", pid, error);
+            VirtualFreeEx(hProcess, pDllPath, 0, MEM_RELEASE);
+            CloseHandle(hProcess);
+            return false;
+        }
+        
+        // Wait for thread to complete
+        DWORD waitResult = WaitForSingleObject(hThread, 5000); // 5 second timeout
+        if (waitResult == WAIT_TIMEOUT) {
+            xlog::Error("Remote thread timeout for PID %d", pid);
+            TerminateThread(hThread, 0);
+            CloseHandle(hThread);
+            VirtualFreeEx(hProcess, pDllPath, 0, MEM_RELEASE);
+            CloseHandle(hProcess);
+            return false;
+        }
+        
+        // Get thread exit code (LoadLibraryA return value)
+        DWORD exitCode = 0;
+        if (!GetExitCodeThread(hThread, &exitCode)) {
+            xlog::Error("GetExitCodeThread failed for PID %d", pid);
+            CloseHandle(hThread);
+            VirtualFreeEx(hProcess, pDllPath, 0, MEM_RELEASE);
+            CloseHandle(hProcess);
+            return false;
+        }
+        
+        // Clean up
+        CloseHandle(hThread);
+        VirtualFreeEx(hProcess, pDllPath, 0, MEM_RELEASE);
         CloseHandle(hProcess);
         
-        // Create injection context
-        InjectContext context;
-        context.pid = pid;
-        context.cfg.processMode = Existing;
-        context.cfg.initRoutine.clear();
-        context.cfg.initArgs = L"";
-        context.cfg.delay = 0;
-        context.cfg.period = 0;
-        context.cfg.skipProc = 0;
-        context.cfg.hijack = false;
-        context.cfg.unlink = false;
-        context.cfg.erasePE = false;
-        context.cfg.krnHandle = false;
-
-        // Load the DLL image
-        auto img = std::make_shared<blackbone::pe::PEImage>();
-        if (!NT_SUCCESS(img->Load(_targetDllPath))) {
-            xlog::Error("Failed to load DLL image: %ls", _targetDllPath.c_str());
+        if (exitCode == 0) {
+            xlog::Error("LoadLibraryA returned 0 for PID %d - DLL load failed", pid);
             return false;
         }
-
-        context.images.push_back(img);
-
-        // Set injection method based on parameter
-        context.cfg.injectMode = (uint32_t)injectType;
-        context.cfg.mmapFlags = 0;
         
-        // Adjust settings based on injection type
-        switch (injectType) {
-            case Normal:
-                // Standard injection settings
-                break;
-            case Manual:
-                // Manual mapping for better stealth
-                context.cfg.erasePE = true; // Erase PE header for stealth
-                context.cfg.unlink = true;  // Unlink from PEB
-                break;
-            case Kernel_Thread:
-                // Kernel-mode injection settings
-                context.cfg.krnHandle = true;
-                break;
-            default:
-                break;
-        }
-        
-        const char* methodName = (injectType == Normal) ? "Normal" : 
-                                (injectType == Manual) ? "Manual" : "Kernel";
-        
-        xlog::Normal("About to call %s injection for PID %d", methodName, pid);
-        
-        NTSTATUS status = 0xC0000001; // STATUS_UNSUCCESSFUL
-        bool injectionCompleted = false;
-        
-        // Run injection in a separate thread with timeout
-        std::thread injectionThread([&]() {
-            try {
-                status = _core.InjectMultiple(&context);
-                injectionCompleted = true;
-                xlog::Normal("Injection call completed for PID %d, status: 0x%X", pid, status);
-            }
-            catch (...) {
-                xlog::Error("Exception occurred during injection for PID %d", pid);
-                injectionCompleted = true;
-            }
-        });
-        
-        // Wait for injection to complete with 10 second timeout
-        auto start = std::chrono::steady_clock::now();
-        while (!injectionCompleted) {
-            Sleep(100);
-            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-                std::chrono::steady_clock::now() - start).count();
-            
-            if (elapsed >= 10) {
-                xlog::Error("Injection timeout after 10 seconds for PID %d - injection may be hanging", pid);
-                // Note: We can't safely terminate the thread, so we just return failure
-                return false;
-            }
-        }
-        
-        injectionThread.join();
-        
-        if (NT_SUCCESS(status)) {
-            xlog::Normal("%s injection successful for PID %d", methodName, pid);
-            return true;
-        }
-        
-        // Enhanced error reporting
-        std::string errorDescription = "Unknown error";
-        if (status == 0xC000000D) {
-            errorDescription = "Invalid parameter - process may be in transitional state";
-        } else if (status == 0xC0000034) {
-            errorDescription = "Object name not found - process handle became invalid";
-        } else if (status == 0xC0000005) {
-            errorDescription = "Access denied - insufficient privileges or anti-cheat protection";
-        }
-        
-        xlog::Error("%s injection failed for PID %d, status: 0x%X (%s)", methodName, pid, status, errorDescription.c_str());
-        return false;
+        xlog::Normal("Simple injection successful for PID %d, DLL handle: 0x%X", pid, exitCode);
+        return true;
     }
 
     static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
