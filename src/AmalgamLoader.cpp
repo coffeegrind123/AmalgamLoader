@@ -249,7 +249,7 @@ private:
                         
                         xlog::Normal("Injection attempt %d/%d for PID %d", attempt, MAX_ATTEMPTS, pid);
                         
-                        // Use normal injection for all attempts
+                        // Use normal injection
                         bool injectResult = InjectIntoProcess(pid, Normal);
                         
                         if (injectResult) {
