@@ -419,14 +419,36 @@ private:
         xlog::Normal("About to call %s injection for PID %d", methodName, pid);
         
         NTSTATUS status = 0xC0000001; // STATUS_UNSUCCESSFUL
-        try {
-            status = _core.InjectMultiple(&context);
-            xlog::Normal("Injection call completed for PID %d, status: 0x%X", pid, status);
+        bool injectionCompleted = false;
+        
+        // Run injection in a separate thread with timeout
+        std::thread injectionThread([&]() {
+            try {
+                status = _core.InjectMultiple(&context);
+                injectionCompleted = true;
+                xlog::Normal("Injection call completed for PID %d, status: 0x%X", pid, status);
+            }
+            catch (...) {
+                xlog::Error("Exception occurred during injection for PID %d", pid);
+                injectionCompleted = true;
+            }
+        });
+        
+        // Wait for injection to complete with 10 second timeout
+        auto start = std::chrono::steady_clock::now();
+        while (!injectionCompleted) {
+            Sleep(100);
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::steady_clock::now() - start).count();
+            
+            if (elapsed >= 10) {
+                xlog::Error("Injection timeout after 10 seconds for PID %d - injection may be hanging", pid);
+                // Note: We can't safely terminate the thread, so we just return failure
+                return false;
+            }
         }
-        catch (...) {
-            xlog::Error("Exception occurred during injection for PID %d", pid);
-            return false;
-        }
+        
+        injectionThread.join();
         
         if (NT_SUCCESS(status)) {
             xlog::Normal("%s injection successful for PID %d", methodName, pid);

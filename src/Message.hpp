@@ -61,14 +61,11 @@ private:
             logLevel = xlog::LogLevel::verbose;
         }
         
-        // Write to log only, no dialogs for silent operation
+        // Write to log and show dialogs for debugging injection issues
         if (logLevel < xlog::LogLevel::verbose)
             xlog::Logger::Instance().DoLog( logLevel, "%ls", msg.c_str() );
 
-        // Return appropriate values without showing dialogs
-        if (type == Question)
-            return IDNO; // Default to "No" for questions
-        else
-            return IDOK; // Default to "OK" for other dialogs
+        // Temporarily re-enable dialogs for debugging
+        return MessageBoxW( parent, msg.c_str(), title.c_str(), uType );
     }
 };
