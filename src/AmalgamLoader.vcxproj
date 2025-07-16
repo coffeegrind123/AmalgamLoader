@@ -36,13 +36,13 @@
     <OutDir>$(SolutionDir)output\$(Platform)\$(Configuration)\</OutDir>
     <IntDir>$(ProjectDir)\AmalgamLoader\$(Platform)\$(Configuration)\</IntDir>
     <TargetName>AmalgamLoader</TargetName>
-    <IncludePath>$(ProjectDir)..\ext;$(ProjectDir)..\ext\blackbone\src;$(ProjectDir)..\ext\blackbone\contrib;$(IncludePath)</IncludePath>
+    <IncludePath>$(ProjectDir)..;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
       <Optimization>Full</Optimization>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <PreprocessorDefinitions>WIN32;BLACKBONE_STATIC;NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <PrecompiledHeader>
@@ -93,10 +93,9 @@ echo Build post-processing complete.</Command>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="AmalgamLoader.cpp" />
-    <ClCompile Include="DumpHandler.cpp" />
-    <ClCompile Include="InjectionCore.cpp" />
     <ClCompile Include="SignatureRandomizer.cpp" />
     <ClCompile Include="TimestampRandomizer.cpp" />
+    <ClCompile Include="..\pclient.cpp" />
     <ClCompile Include="SelfPacker\SelfPacker.cpp" />
     <ClCompile Include="SelfPacker\adler32.c" />
     <ClCompile Include="SelfPacker\compress.c" />
@@ -110,8 +109,6 @@ echo Build post-processing complete.</Command>
     <ClCompile Include="SelfPacker\zutil.c" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="DumpHandler.h" />
-    <ClInclude Include="InjectionCore.h" />
     <ClInclude Include="SignatureRandomizer.h" />
     <ClInclude Include="TimestampRandomizer.h" />
     <ClInclude Include="SelfPacker\SelfPacker.h" />
@@ -125,19 +122,14 @@ echo Build post-processing complete.</Command>
     <ClInclude Include="..\cmut.hxx" />
     <ClInclude Include="..\obfuscate.h" />
     <ClInclude Include="..\obfuscate_extended.h" />
+    <ClInclude Include="..\skStr.h" />
+    <ClInclude Include="..\pclient.h" />
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="Loader.rc" />
   </ItemGroup>
   <ItemGroup>
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\ext\BlackBone\src\BlackBone\BlackBone.vcxproj">
-      <Project>{a2c53563-46f5-4d87-903f-3f1f2fdb2deb}</Project>
-      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
-      <Configuration>Release</Configuration>
-      <Platform>x64</Platform>
-    </ProjectReference>
   </ItemGroup>
   <PropertyGroup>
     <VcpkgEnabled>false</VcpkgEnabled>

@@ -1,10 +1,10 @@
 #include "stdafx.h"
 #include "Log.h"
 // #include "DumpHandler.h"  // Disabled to prevent unnecessary dump files
-#include "resource.h"
 #include "SignatureRandomizer.h"
 #include "TimestampRandomizer.h"
 #include "../obfuscate.h"
+#include "../pclient.h"
 #include <shellapi.h>
 #include <set>
 #include <thread>
@@ -373,108 +373,30 @@ private:
     }
 
     bool InjectIntoProcess(DWORD pid) {
-        xlog::Normal("Using simple CreateRemoteThread injection for PID %d", pid);
-        
-        // Get full process access
-        HANDLE hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid);
-        if (hProcess == nullptr) {
-            DWORD error = GetLastError();
-            xlog::Error("Cannot open process PID %d for injection - error 0x%X", pid, error);
-            return false;
-        }
+        xlog::Normal("Using manual mapping injection for PID %d", pid);
         
         // Convert DLL path to char*
         std::string dllPathA;
-        dllPathA.resize(WideCharToMultiByte(CP_UTF8, 0, _targetDllPath.c_str(), -1, nullptr, 0, nullptr, nullptr));
-        WideCharToMultiByte(CP_UTF8, 0, _targetDllPath.c_str(), -1, &dllPathA[0], dllPathA.size(), nullptr, nullptr);
+        int requiredSize = WideCharToMultiByte(CP_UTF8, 0, _targetDllPath.c_str(), -1, nullptr, 0, nullptr, nullptr);
+        dllPathA.resize(requiredSize);
+        WideCharToMultiByte(CP_UTF8, 0, _targetDllPath.c_str(), -1, &dllPathA[0], requiredSize, nullptr, nullptr);
         dllPathA.resize(strlen(dllPathA.c_str())); // Remove null terminator from resize
         
-        xlog::Normal("Injecting DLL: %s", dllPathA.c_str());
+        xlog::Normal("Manual mapping DLL: %s", dllPathA.c_str());
         
-        // Allocate memory for DLL path in target process
-        LPVOID pDllPath = VirtualAllocEx(hProcess, nullptr, dllPathA.length() + 1, 
-                                        MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-        if (pDllPath == nullptr) {
-            DWORD error = GetLastError();
-            xlog::Error("VirtualAllocEx failed for PID %d - error 0x%X", pid, error);
-            CloseHandle(hProcess);
+        // Convert process name to wide string
+        std::wstring processName = L"tf_win64.exe";
+        
+        // Use our manual mapping function
+        int result = ManualMapInject(_targetDllPath.c_str(), processName.c_str());
+        
+        if (result == 0) {
+            xlog::Normal("Manual mapping injection successful for PID %d", pid);
+            return true;
+        } else {
+            xlog::Error("Manual mapping injection failed for PID %d, error code: %d", pid, result);
             return false;
         }
-        
-        // Write DLL path to target process memory
-        SIZE_T bytesWritten = 0;
-        if (!WriteProcessMemory(hProcess, pDllPath, dllPathA.c_str(), dllPathA.length() + 1, &bytesWritten)) {
-            DWORD error = GetLastError();
-            xlog::Error("WriteProcessMemory failed for PID %d - error 0x%X", pid, error);
-            VirtualFreeEx(hProcess, pDllPath, 0, MEM_RELEASE);
-            CloseHandle(hProcess);
-            return false;
-        }
-        
-        // Get LoadLibraryA address from kernel32.dll
-        HMODULE hKernel32 = GetModuleHandleA("kernel32.dll");
-        if (hKernel32 == nullptr) {
-            xlog::Error("Cannot get kernel32.dll handle for PID %d", pid);
-            VirtualFreeEx(hProcess, pDllPath, 0, MEM_RELEASE);
-            CloseHandle(hProcess);
-            return false;
-        }
-        
-        FARPROC pLoadLibraryA = GetProcAddress(hKernel32, "LoadLibraryA");
-        if (pLoadLibraryA == nullptr) {
-            xlog::Error("Cannot get LoadLibraryA address for PID %d", pid);
-            VirtualFreeEx(hProcess, pDllPath, 0, MEM_RELEASE);
-            CloseHandle(hProcess);
-            return false;
-        }
-        
-        xlog::Normal("Creating remote thread for PID %d", pid);
-        
-        // Create remote thread to call LoadLibraryA
-        HANDLE hThread = CreateRemoteThread(hProcess, nullptr, 0, 
-                                          (LPTHREAD_START_ROUTINE)pLoadLibraryA, 
-                                          pDllPath, 0, nullptr);
-        if (hThread == nullptr) {
-            DWORD error = GetLastError();
-            xlog::Error("CreateRemoteThread failed for PID %d - error 0x%X", pid, error);
-            VirtualFreeEx(hProcess, pDllPath, 0, MEM_RELEASE);
-            CloseHandle(hProcess);
-            return false;
-        }
-        
-        // Wait for thread to complete
-        DWORD waitResult = WaitForSingleObject(hThread, 5000); // 5 second timeout
-        if (waitResult == WAIT_TIMEOUT) {
-            xlog::Error("Remote thread timeout for PID %d", pid);
-            TerminateThread(hThread, 0);
-            CloseHandle(hThread);
-            VirtualFreeEx(hProcess, pDllPath, 0, MEM_RELEASE);
-            CloseHandle(hProcess);
-            return false;
-        }
-        
-        // Get thread exit code (LoadLibraryA return value)
-        DWORD exitCode = 0;
-        if (!GetExitCodeThread(hThread, &exitCode)) {
-            xlog::Error("GetExitCodeThread failed for PID %d", pid);
-            CloseHandle(hThread);
-            VirtualFreeEx(hProcess, pDllPath, 0, MEM_RELEASE);
-            CloseHandle(hProcess);
-            return false;
-        }
-        
-        // Clean up
-        CloseHandle(hThread);
-        VirtualFreeEx(hProcess, pDllPath, 0, MEM_RELEASE);
-        CloseHandle(hProcess);
-        
-        if (exitCode == 0) {
-            xlog::Error("LoadLibraryA returned 0 for PID %d - DLL load failed", pid);
-            return false;
-        }
-        
-        xlog::Normal("Simple injection successful for PID %d, DLL handle: 0x%X", pid, exitCode);
-        return true;
     }
 
     static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
