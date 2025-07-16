@@ -336,15 +336,13 @@ void End()
 int ManualMapInject(const wchar_t* dllPath, const wchar_t* processName)
 {
 
-	LPBYTE ptr;
-	HANDLE hProcess, hThread, hSnap, hFile;
-	PVOID mem, mem1;
+	HANDLE hProcess, hThread, hFile;
+	PVOID mem1;
 	DWORD ProcessId, FileSize, read, i;
 	PVOID buffer, image;
 	BOOLEAN bl;
 	PIMAGE_DOS_HEADER pIDH;
 	PIMAGE_NT_HEADERS pINH;
-	PIMAGE_SECTION_HEADER pISH;
 
 	THREADENTRY32 te32;
 	CONTEXT ctx;
