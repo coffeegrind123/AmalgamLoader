@@ -259,15 +259,85 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                         // Try calling as void function first with proper exception handling
                         debug_log("About to call void function - this is the moment of truth...");
                         
+                        // Before calling, let's validate the entry point code
                         __try {
-                            // Call the function directly - let the compiler handle calling convention
-                            debug_log("Calling void function now...");
-                            voidFunc();
-                            debug_log("Void function returned without exception!");
+                            // Read and validate the first few instructions
+                            BYTE entryCode[32];
+                            memcpy(entryCode, voidFunc, 32);
                             
-                            debug_log("Void function call returned successfully!");
+                            char hexDump[256] = {0};
+                            for (int i = 0; i < 32; i++) {
+                                sprintf(hexDump + strlen(hexDump), "%02X ", entryCode[i]);
+                            }
+                            sprintf(log_msg, "Entry point code: %s", hexDump);
+                            debug_log(log_msg);
+                            
+                            // Check if it looks like valid x64 code
+                            if (entryCode[0] == 0x00 && entryCode[1] == 0x00 && entryCode[2] == 0x00) {
+                                debug_log("WARNING: Entry point appears to be zeroed/invalid!");
+                            }
+                        } __except(EXCEPTION_EXECUTE_HANDLER) {
+                            debug_log("ERROR: Cannot read entry point code - memory access violation!");
+                            return -1;
+                        }
+                        
+                        // Try calling with a separate thread to isolate stack issues
+                        debug_log("Creating separate thread for entry point call...");
+                        
+                        struct CallParams {
+                            void* func;
+                            volatile bool completed;
+                            volatile DWORD result;
+                            volatile DWORD exception;
+                        };
+                        
+                        CallParams params = { voidFunc, false, 0, 0 };
+                        
+                        HANDLE hThread = CreateThread(NULL, 0x100000, // 1MB stack
+                            [](LPVOID lpParam) -> DWORD {
+                                CallParams* p = (CallParams*)lpParam;
+                                __try {
+                                    // Call as void function
+                                    typedef void (*VoidFunc)();
+                                    VoidFunc func = (VoidFunc)p->func;
+                                    func();
+                                    p->completed = true;
+                                    p->result = 0;
+                                    return 0;
+                                } __except(EXCEPTION_EXECUTE_HANDLER) {
+                                    p->exception = GetExceptionCode();
+                                    p->completed = false;
+                                    return 1;
+                                }
+                            }, &params, 0, NULL);
+                        
+                        if (hThread) {
+                            debug_log("Waiting for thread to complete entry point call...");
+                            DWORD waitResult = WaitForSingleObject(hThread, 5000);
+                            
+                            if (waitResult == WAIT_OBJECT_0) {
+                                if (params.completed) {
+                                    debug_log("Thread-based void call completed successfully!");
+                                    CloseHandle(hThread);
+                                    if (veh) RemoveVectoredExceptionHandler(veh);
+                                    return 0;
+                                } else {
+                                    sprintf(log_msg, "Thread-based void call failed with exception 0x%08X", params.exception);
+                                    debug_log(log_msg);
+                                }
+                            } else {
+                                debug_log("Thread-based call timed out or failed");
+                            }
+                            CloseHandle(hThread);
+                        }
+                        
+                        // Fallback to direct call
+                        __try {
+                            debug_log("Attempting direct void call as fallback...");
+                            voidFunc();
+                            debug_log("Direct void call succeeded!");
                             if (veh) RemoveVectoredExceptionHandler(veh);
-                            return 0; // Success!
+                            return 0;
                         } __except(EXCEPTION_EXECUTE_HANDLER) {
                             DWORD voidExceptionCode = GetExceptionCode();
                             sprintf(log_msg, "Void call failed with exception 0x%08X, trying WinMain call...", voidExceptionCode);
@@ -651,6 +721,39 @@ void* load_pe(PBYTE pe_data, PBYTE* base_address, DWORD64* original_imagebase) {
     }
 
     debug_log("load_pe: Section mapping completed");
+    
+    // Validate that critical sections are properly mapped
+    for (int i = 0; i < p_NT_HDR->FileHeader.NumberOfSections; i++) {
+        PBYTE sectionStart = addrp + sections[i].VirtualAddress;
+        DWORD sectionSize = sections[i].Misc.VirtualSize;
+        
+        // Check if this section contains the entry point
+        DWORD entryRVA = p_NT_HDR->OptionalHeader.AddressOfEntryPoint;
+        if (entryRVA >= sections[i].VirtualAddress && 
+            entryRVA < sections[i].VirtualAddress + sectionSize) {
+            sprintf(log_msg, "load_pe: Entry point is in section %d (%.8s)", i, sections[i].Name);
+            debug_log(log_msg);
+            
+            // Verify the entry point area is not zeroed
+            __try {
+                BYTE* entryPtr = addrp + entryRVA;
+                bool isZeroed = true;
+                for (int j = 0; j < 16; j++) {
+                    if (entryPtr[j] != 0) {
+                        isZeroed = false;
+                        break;
+                    }
+                }
+                if (isZeroed) {
+                    debug_log("load_pe: ERROR - Entry point area is zeroed!");
+                } else {
+                    debug_log("load_pe: Entry point area contains valid data");
+                }
+            } __except(EXCEPTION_EXECUTE_HANDLER) {
+                debug_log("load_pe: ERROR - Cannot access entry point area!");
+            }
+        }
+    }
 
     // [ Fix imports ]
 
