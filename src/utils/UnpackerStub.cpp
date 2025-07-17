@@ -281,67 +281,52 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                             return -1;
                         }
                         
-                        // Skip the normal startup sequence and call wWinMain directly
-                        debug_log("Attempting to call wWinMain directly (skip CRT startup)...");
+                        // Try a simpler approach - just call the entry point and let the unpacker exit
+                        debug_log("Attempting simple void call and letting unpacker exit...");
                         
-                        struct WinMainParams {
+                        // Create a simple thread that calls the entry point
+                        struct SimpleParams {
                             void* func;
-                            HINSTANCE hInstance;
-                            LPWSTR lpCmdLine;
-                            int nCmdShow;
-                            volatile bool completed;
-                            volatile DWORD result;
+                            volatile bool started;
                             volatile DWORD exception;
                         };
                         
-                        WinMainParams params = { 
-                            voidFunc, 
-                            (HINSTANCE)loaded_base, 
-                            GetCommandLineW(), 
-                            1, 
-                            false, 
-                            0, 
-                            0 
-                        };
+                        SimpleParams params = { voidFunc, false, 0 };
                         
                         HANDLE hThread = CreateThread(NULL, 0x100000, // 1MB stack
                             [](LPVOID lpParam) -> DWORD {
-                                WinMainParams* p = (WinMainParams*)lpParam;
+                                SimpleParams* p = (SimpleParams*)lpParam;
+                                p->started = true;
+                                
                                 __try {
-                                    // Call as wWinMain function directly
-                                    typedef int (WINAPI *WinMainFunc)(HINSTANCE, HINSTANCE, LPWSTR, int);
-                                    WinMainFunc func = (WinMainFunc)p->func;
-                                    
-                                    // Call wWinMain with proper parameters
-                                    p->result = func(p->hInstance, NULL, p->lpCmdLine, p->nCmdShow);
-                                    p->completed = true;
+                                    // Call the entry point and let it run
+                                    typedef void (*VoidFunc)();
+                                    VoidFunc func = (VoidFunc)p->func;
+                                    func();
                                     return 0;
                                 } __except(EXCEPTION_EXECUTE_HANDLER) {
                                     p->exception = GetExceptionCode();
-                                    p->completed = false;
                                     return 1;
                                 }
                             }, &params, 0, NULL);
                         
                         if (hThread) {
-                            debug_log("Waiting for wWinMain thread to complete...");
-                            DWORD waitResult = WaitForSingleObject(hThread, 10000); // 10 second timeout
+                            debug_log("Entry point thread created, unpacker will exit and let it run...");
                             
-                            if (waitResult == WAIT_OBJECT_0) {
-                                if (params.completed) {
-                                    sprintf(log_msg, "Direct wWinMain call completed successfully! Return code: %d", params.result);
-                                    debug_log(log_msg);
-                                    CloseHandle(hThread);
-                                    if (veh) RemoveVectoredExceptionHandler(veh);
-                                    return 0;
-                                } else {
-                                    sprintf(log_msg, "Direct wWinMain call failed with exception 0x%08X", params.exception);
-                                    debug_log(log_msg);
-                                }
+                            // Wait a moment for the thread to start
+                            Sleep(100);
+                            
+                            if (params.started) {
+                                debug_log("Entry point thread started successfully - unpacker exiting");
+                                CloseHandle(hThread);
+                                if (veh) RemoveVectoredExceptionHandler(veh);
+                                
+                                // Exit the unpacker process and let the entry point thread continue
+                                ExitProcess(0);
                             } else {
-                                debug_log("Direct wWinMain call timed out or failed");
+                                debug_log("Entry point thread failed to start");
+                                CloseHandle(hThread);
                             }
-                            CloseHandle(hThread);
                         }
                         
                         // Fallback to direct call
