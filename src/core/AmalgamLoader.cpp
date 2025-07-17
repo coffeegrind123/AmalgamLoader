@@ -712,31 +712,61 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
     
     // Timestamp operations working correctly now
     
-    // Initialize logging first
-    xlog::Normal("AmalgamLoader starting up...");
-    
-    // Emergency debugging after logging init
-    fopen_s(&emergency_log, "emergency_debug.log", "a");
-    if (emergency_log) {
-        fprintf(emergency_log, "[%lu] wWinMain: Logging initialized\n", GetTickCount());
-        fflush(emergency_log);
-        fclose(emergency_log);
+    // Initialize logging first - with safety check for unpacked environment
+    __try {
+        xlog::Normal("AmalgamLoader starting up...");
+        
+        // Emergency debugging after logging init
+        fopen_s(&emergency_log, "emergency_debug.log", "a");
+        if (emergency_log) {
+            fprintf(emergency_log, "[%lu] wWinMain: Logging initialized\n", GetTickCount());
+            fflush(emergency_log);
+            fclose(emergency_log);
+        }
+    } __except(EXCEPTION_EXECUTE_HANDLER) {
+        // Logging failed - probably unpacked environment with incomplete CRT
+        FILE* crash_log = nullptr;
+        fopen_s(&crash_log, "emergency_debug.log", "a");
+        if (crash_log) {
+            fprintf(crash_log, "[%lu] wWinMain: Logging initialization FAILED (exception 0x%08X) - continuing without xlog\n", 
+                    GetTickCount(), GetExceptionCode());
+            fflush(crash_log);
+            fclose(crash_log);
+        }
     }
     
     // CRITICAL: Initialize SelfPacker protection FIRST - before ANY other code execution
-    xlog::Normal("Initializing SelfPacker protection...");
+    __try {
+        xlog::Normal("Initializing SelfPacker protection...");
+    } __except(EXCEPTION_EXECUTE_HANDLER) {
+        // Continue without xlog if it fails
+    }
+    
     if (!AmalgamSelfPacker::InitializeEarlyProtection()) {
-        xlog::Error("SelfPacker protection initialization failed - application will exit");
+        __try {
+            xlog::Error("SelfPacker protection initialization failed - application will exit");
+        } __except(EXCEPTION_EXECUTE_HANDLER) {
+            // Continue without xlog if it fails
+        }
         MessageBoxA(nullptr, "SelfPacker initialization failed. Check logs for details.", "AmalgamLoader Error", MB_OK | MB_ICONERROR);
         return 1;
     }
-    xlog::Normal("SelfPacker protection initialized successfully");
+    
+    __try {
+        xlog::Normal("SelfPacker protection initialized successfully");
+    } __except(EXCEPTION_EXECUTE_HANDLER) {
+        // Continue without xlog if it fails
+    }
     
     // Check for timestamp flag SECOND - after protection is initialized
     LPWSTR cmdLine = GetCommandLineW();
     
     // Debug: Log what we're doing
-    xlog::Normal("Command line: %ws", cmdLine ? cmdLine : L"(null)");
+    __try {
+        xlog::Normal("Command line: %ws", cmdLine ? cmdLine : L"(null)");
+    } __except(EXCEPTION_EXECUTE_HANDLER) {
+        // Continue without xlog if it fails
+    }
     
 process_timestamp:
     // Quick check for timestamp flag without complex parsing
