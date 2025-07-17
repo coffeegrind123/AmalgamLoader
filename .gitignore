@@ -80,4 +80,5 @@ GeneratedFiles*/
 *.idb
 *.db
 
-aestest/
+aestest/pe-packer/
+pe-tutorial/

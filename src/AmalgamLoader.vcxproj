@@ -81,12 +81,23 @@ if %TIMESTAMP_ERROR% EQU 0 (
     echo Timestamp obfuscation failed with error %TIMESTAMP_ERROR%.
     echo Check $(OutDir)Amalgam.log for details.
 )
+echo Building unpacker stub...
+cl.exe /nologo /O2 /MT /DNDEBUG "$(ProjectDir)utils\UnpackerStub.cpp" /Fe:"$(OutDir)UnpackerStub.exe" /link /SUBSYSTEM:WINDOWS kernel32.lib user32.lib 2&gt;&amp;1
 echo Applying build-time packing...
-"$(OutDir)$(TargetName).exe" --build-time-pack "$(OutDir)$(TargetName).exe" 2&gt;nul
-echo Build-time packing completed.
+"$(OutDir)$(TargetName).exe" --pack-executable "$(OutDir)$(TargetName).exe" "$(OutDir)$(TargetName)_packed.exe" 2&gt;&amp;1
+set PACK_ERROR=%ERRORLEVEL%
+if %PACK_ERROR% EQU 0 (
+    echo Build-time packing completed successfully.
+    echo Replacing original with packed version...
+    move "$(OutDir)$(TargetName)_packed.exe" "$(OutDir)$(TargetName).exe" 2&gt;&amp;1
+) else (
+    echo Build-time packing failed with error %PACK_ERROR%.
+    echo Check $(OutDir)Amalgam.log for details.
+)
 echo Cleaning up build artifacts...
 del "$(OutDir)$(TargetName).exp" 2&gt;nul
 del "$(OutDir)$(TargetName).lib" 2&gt;nul
+del "$(OutDir)UnpackerStub.exe" 2&gt;nul
 del "$(OutDir)msdia140.dll" 2&gt;nul
 del "$(OutDir)symsrv.dll" 2&gt;nul
 echo Build post-processing complete.</Command>
@@ -98,6 +109,7 @@ echo Build post-processing complete.</Command>
     <ClCompile Include="core\AmalgamSelfPacker.cpp" />
     <ClCompile Include="utils\SignatureRandomizer.cpp" />
     <ClCompile Include="utils\TimestampRandomizer.cpp" />
+    <ClCompile Include="utils\PEPacker.cpp" />
     <ClCompile Include="core\ProcessClient.cpp" />
     <ClCompile Include="..\SelfPacker\SelfPacker.cpp" />
     <ClCompile Include="..\SelfPacker\adler32.c" />
@@ -120,6 +132,7 @@ echo Build post-processing complete.</Command>
     <ClInclude Include="include\StringObfuscation.h" />
     <ClInclude Include="include\ProcessClient.h" />
     <ClInclude Include="include\SelfPacker.h" />
+    <ClInclude Include="include\PEPacker.h" />
     <ClInclude Include="..\SelfPacker\SelfPacker.h" />
     <ClInclude Include="..\SelfPacker\zlib.h" />
     <ClInclude Include="..\SelfPacker\zconf.h" />

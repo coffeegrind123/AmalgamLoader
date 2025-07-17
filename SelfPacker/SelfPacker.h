@@ -31,6 +31,8 @@ private:
     // Core functions from packer-tutorial
     static void validate_target(const std::vector<std::uint8_t>& target);
     static std::vector<std::uint8_t> load_stub_resource();
+    static bool is_already_packed(const std::vector<std::uint8_t>& data);
+    static double calculate_section_entropy(const std::vector<std::uint8_t>& data, const IMAGE_SECTION_HEADER* section);
     
     template <typename T>
     static T align(T value, T alignment) {
@@ -52,8 +54,20 @@ private:
     
     // Code obfuscation (adapted from pe-packer for x64)
     static void apply_single_mutation(std::vector<std::uint8_t>& code);
-    static void insert_junk_instructions(std::vector<std::uint8_t>& code);
     static void randomize_instruction_order(std::vector<std::uint8_t>& code);
+    
+    // Junk code generation helpers
+    static std::vector<std::uint8_t> generate_nop_sled();
+    static std::vector<std::uint8_t> generate_push_pop_junk();
+    static std::vector<std::uint8_t> generate_arithmetic_junk();
+    static std::vector<std::uint8_t> generate_fake_conditional_junk();
+    static std::vector<std::uint8_t> generate_call_ret_junk();
+    static std::vector<std::uint8_t> generate_anti_disasm_junk();
+    static std::vector<std::uint8_t> generate_register_junk();
+    static std::vector<std::uint8_t> generate_cpuid_junk();
+    static std::vector<std::uint8_t> generate_fake_loop_junk();
+    static std::vector<std::uint8_t> generate_mba_junk();
+    static void generate_random_section_name(char* name_buffer);
     
     // Specific mutation techniques (from pe-packer)
     static void insert_nop_sled(std::vector<std::uint8_t>& code, size_t pos);
@@ -75,6 +89,7 @@ private:
     static std::mt19937& get_safe_rng();
     static void xor_memory_region(void* address, size_t size, std::uint8_t key);
     
+public:
     // Stub variants for polymorphism
     enum StubVariant {
         STUB_MINIMAL,
@@ -85,6 +100,22 @@ private:
     
     static StubVariant select_random_stub_variant();
     static std::vector<std::uint8_t> get_stub_variant(StubVariant variant);
+    static void insert_junk_instructions(std::vector<std::uint8_t>& code);
+
+private:
+    
+    // Stub variant creation helpers
+    static std::vector<std::uint8_t> create_minimal_stub_variant(const std::vector<std::uint8_t>& base_stub);
+    static std::vector<std::uint8_t> create_anti_debug_stub_variant(const std::vector<std::uint8_t>& base_stub);
+    static std::vector<std::uint8_t> create_anti_vm_stub_variant(const std::vector<std::uint8_t>& base_stub);
+    static std::vector<std::uint8_t> create_polymorphic_stub_variant(const std::vector<std::uint8_t>& base_stub);
+    
+    // Advanced anti-analysis insertion helpers
+    static void insert_anti_debug_checks(std::vector<std::uint8_t>& stub);
+    static void insert_vm_detection_checks(std::vector<std::uint8_t>& stub);
+    static void insert_timing_checks(std::vector<std::uint8_t>& stub);
+    static void insert_hardware_checks(std::vector<std::uint8_t>& stub);
+    static void insert_polymorphic_code_blocks(std::vector<std::uint8_t>& stub);
     
     // Configuration flags
     struct PackingConfig {

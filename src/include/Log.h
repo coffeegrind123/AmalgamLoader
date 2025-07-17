@@ -4,6 +4,7 @@
 #include <cstdarg>
 #include <ctime>
 #include <cstdio>
+#include "Obfuscation.h"
 
 namespace xlog
 {
@@ -76,7 +77,7 @@ public:
 private:
     Logger()
     {
-        _output.open( "Amalgam.log", std::ios::out | std::ios::app );
+        _output.open( AY_OBFUSCATE("Amalgam.log"), std::ios::out | std::ios::app );
     }
 
     Logger( const Logger& ) = delete;

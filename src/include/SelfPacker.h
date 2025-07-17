@@ -33,7 +33,21 @@ private:
     static bool DetectSandboxEnvironment();
     static bool DetectDynamicAnalysis();
     
+    // Advanced polymorphic protection functions
+    static void ApplyPolymorphicProtection();
+    static SelfPacker::StubVariant SelectOptimalStubVariant();
+    static bool DetectComprehensiveAnalysis();
+    static bool DetectVirtualEnvironment();
+    static bool DetectDeveloperTools();
+    static bool DetectActiveAnalysis();
+    
+    // Advanced countermeasures for hostile environments
+    static void ApplyAdvancedCountermeasures();
+    static bool IsHostileEnvironment();
+    static void ApplyRuntimeJunkCodeInsertions();
+    
     // Convert between string types for SelfPacker compatibility
     static std::string WStringToString(const std::wstring& wstr);
     static std::wstring StringToWString(const std::string& str);
+    static std::wstring StringToWString(const char* str);
 };
