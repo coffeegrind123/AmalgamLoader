@@ -980,59 +980,11 @@ void* load_pe(PBYTE pe_data, PBYTE* base_address, DWORD64* original_imagebase) {
 
     debug_log("load_pe: Section permissions set");
     
-    // Check for TLS callbacks and execute them
+    // Skip TLS callback execution during unpacking - let normal execution handle them
     IMAGE_DATA_DIRECTORY tls_dir = p_NT_HDR->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_TLS];
     if (tls_dir.VirtualAddress != 0 && tls_dir.Size != 0) {
-        debug_log("load_pe: Found TLS directory, processing callbacks...");
-        // Validate TLS directory location
-        if (tls_dir.VirtualAddress >= p_NT_HDR->OptionalHeader.SizeOfImage) {
-            debug_log("load_pe: ERROR - TLS directory address is outside image bounds");
-            VirtualFree(addrp, 0, MEM_RELEASE);
-            return NULL;
-        }
-        
-        IMAGE_TLS_DIRECTORY64* tls_data = (IMAGE_TLS_DIRECTORY64*)(addrp + tls_dir.VirtualAddress);
-        
-        if (tls_data->AddressOfCallBacks != 0) {
-            // Calculate the delta for relocation
-            ULONG_PTR delta_VA = ((ULONG_PTR)addrp) - p_NT_HDR->OptionalHeader.ImageBase;
-            
-            PIMAGE_TLS_CALLBACK* callbacks = (PIMAGE_TLS_CALLBACK*)(addrp + (tls_data->AddressOfCallBacks - p_NT_HDR->OptionalHeader.ImageBase));
-            
-            for (int i = 0; callbacks[i] != nullptr; i++) {
-                // Apply relocation to callback address only if needed
-                PIMAGE_TLS_CALLBACK relocated_callback;
-                if (delta_VA == 0) {
-                    // No relocation needed - use callback address directly
-                    relocated_callback = callbacks[i];
-                } else {
-                    // Apply relocation
-                    relocated_callback = (PIMAGE_TLS_CALLBACK)((ULONG_PTR)callbacks[i] + delta_VA);
-                }
-                
-                sprintf(log_msg, "load_pe: Calling TLS callback %d at 0x%p (relocated from 0x%p)", i, relocated_callback, callbacks[i]);
-                debug_log(log_msg);
-                __try {
-                    relocated_callback(addrp, DLL_PROCESS_ATTACH, nullptr);
-                    sprintf(log_msg, "load_pe: TLS callback %d completed successfully", i);
-                    debug_log(log_msg);
-                } __except(EXCEPTION_EXECUTE_HANDLER) {
-                    DWORD exceptionCode = GetExceptionCode();
-                    sprintf(log_msg, "load_pe: TLS callback %d failed with exception 0x%08X, continuing...", i, exceptionCode);
-                    debug_log(log_msg);
-                    
-                    // Log specific exception types for TLS callbacks
-                    if (exceptionCode == 0xC0000005) {
-                        debug_log("load_pe: TLS callback exception: Access Violation");
-                    } else if (exceptionCode == 0xC000001D) {
-                        debug_log("load_pe: TLS callback exception: Illegal Instruction");
-                    } else if (exceptionCode == 0xC00000FD) {
-                        debug_log("load_pe: TLS callback exception: Stack Overflow");
-                    }
-                }
-            }
-        }
-        debug_log("load_pe: TLS callbacks completed");
+        debug_log("load_pe: Found TLS directory, but skipping callback execution during unpacking");
+        debug_log("load_pe: TLS callbacks will be handled by normal Windows loader process");
     } else {
         debug_log("load_pe: No TLS directory found");
     }
