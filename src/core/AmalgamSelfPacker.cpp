@@ -125,16 +125,22 @@ bool AmalgamSelfPacker::ApplyInjectionProtection() {
     
     try {
         // Enhanced sandbox detection for injection analysis
+        // TODO: Re-enable when VM/sandbox detection is more functional
+        /*
         if (DetectSandboxEnvironment()) {
             xlog::Warning("Sandbox environment detected");
             return false;
         }
+        */
         
         // Dynamic analysis detection
+        // TODO: Re-enable when dynamic analysis detection is more functional
+        /*
         if (DetectDynamicAnalysis()) {
             xlog::Warning("Dynamic analysis detected");
             return false;
         }
+        */
         
         // Apply additional runtime modifications for injection scenarios
         SelfPacker::randomize_section_names();
@@ -391,9 +397,10 @@ SelfPacker::StubVariant AmalgamSelfPacker::SelectOptimalStubVariant() {
 
 bool AmalgamSelfPacker::DetectComprehensiveAnalysis() {
     // Combine all detection methods for comprehensive coverage
+    // TODO: Re-enable sandbox and dynamic analysis detection when more functional
     return DetectInjectionAnalysis() || 
-           DetectSandboxEnvironment() || 
-           DetectDynamicAnalysis() ||
+           // DetectSandboxEnvironment() || 
+           // DetectDynamicAnalysis() ||
            DetectVirtualEnvironment() ||
            DetectDeveloperTools() ||
            DetectActiveAnalysis();
@@ -599,7 +606,8 @@ bool AmalgamSelfPacker::IsHostileEnvironment() {
     if (SelfPacker::check_debugger()) hostileScore += 3;
     if (DetectDeveloperTools()) hostileScore += 2;
     if (DetectActiveAnalysis()) hostileScore += 3;
-    if (DetectDynamicAnalysis()) hostileScore += 2;
+    // TODO: Re-enable when dynamic analysis detection is more functional
+    // if (DetectDynamicAnalysis()) hostileScore += 2;
     
     // Check for multiple analysis tools running simultaneously - ALL OBFUSCATED
     std::vector<std::wstring> criticalAnalysisTools = {
