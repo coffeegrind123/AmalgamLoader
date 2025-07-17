@@ -281,39 +281,48 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                             return -1;
                         }
                         
-                        // Now that VM detection is disabled, let's try calling the entry point directly
-                        debug_log("Attempting to call entry point with VM detection disabled...");
+                        // Try calling the entry point through normal Windows startup sequence
+                        debug_log("Creating separate process to run unpacked PE...");
                         
-                        // Call the entry point as wWinMain
-                        __try {
-                            typedef int (WINAPI *WinMainFunc)(HINSTANCE, HINSTANCE, LPWSTR, int);
-                            WinMainFunc winMainFunc = (WinMainFunc)voidFunc;
+                        // Write the unpacked PE to a temporary file
+                        char tempPath[MAX_PATH];
+                        GetTempPathA(MAX_PATH, tempPath);
+                        strcat_s(tempPath, MAX_PATH, "AmalgamLoader_unpacked.exe");
+                        
+                        FILE* tempFile = nullptr;
+                        fopen_s(&tempFile, tempPath, "wb");
+                        if (tempFile) {
+                            // Write the entire loaded PE to disk
+                            fwrite(loaded_base, 1, 0x78000, tempFile); // Use SizeOfImage
+                            fclose(tempFile);
                             
-                            // Get wide command line
-                            LPWSTR lpCmdLineW = GetCommandLineW();
-                            HINSTANCE peInstance = (HINSTANCE)loaded_base;
-                            
-                            debug_log("Calling wWinMain directly...");
-                            int result = winMainFunc(peInstance, NULL, lpCmdLineW, 1);
-                            sprintf(log_msg, "wWinMain call returned with code: %d", result);
+                            sprintf(log_msg, "Unpacked PE written to: %s", tempPath);
                             debug_log(log_msg);
                             
-                            if (veh) RemoveVectoredExceptionHandler(veh);
-                            return 0; // Success!
-                        } __except(EXCEPTION_EXECUTE_HANDLER) {
-                            DWORD winMainException = GetExceptionCode();
-                            sprintf(log_msg, "wWinMain call failed with exception 0x%08X", winMainException);
-                            debug_log(log_msg);
+                            // Launch the unpacked PE as a separate process
+                            STARTUPINFOA si = {0};
+                            PROCESS_INFORMATION pi = {0};
+                            si.cb = sizeof(si);
                             
-                            if (winMainException == 0xC0000005) {
-                                debug_log("wWinMain exception: Access Violation");
-                            } else if (winMainException == 0xC000001D) {
-                                debug_log("wWinMain exception: Illegal Instruction");
+                            if (CreateProcessA(tempPath, NULL, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
+                                debug_log("Unpacked PE launched successfully as separate process");
+                                
+                                // Close process handles
+                                CloseHandle(pi.hProcess);
+                                CloseHandle(pi.hThread);
+                                
+                                if (veh) RemoveVectoredExceptionHandler(veh);
+                                return 0; // Success!
+                            } else {
+                                DWORD error = GetLastError();
+                                sprintf(log_msg, "Failed to launch unpacked PE: error 0x%08X", error);
+                                debug_log(log_msg);
                             }
+                        } else {
+                            debug_log("Failed to create temporary file for unpacked PE");
                         }
                         
-                        if (veh) RemoveVectoredExceptionHandler(veh);
-                        debug_log("Entry point call failed - exiting");
+                        debug_log("Separate process launch failed - trying direct call as fallback...");
                         
                         // Fallback to direct call
                         __try {
