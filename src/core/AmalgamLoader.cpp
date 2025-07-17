@@ -747,45 +747,22 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
     }
     
     // CRITICAL: Initialize SelfPacker protection FIRST - before ANY other code execution
-    auto SafeLog = [](const char* message) {
-        __try {
-            xlog::Normal(message);
-        } __except(EXCEPTION_EXECUTE_HANDLER) {
-            // Continue without xlog if it fails
-        }
-    };
-    
-    auto SafeLogError = [](const char* message) {
-        __try {
-            xlog::Error(message);
-        } __except(EXCEPTION_EXECUTE_HANDLER) {
-            // Continue without xlog if it fails
-        }
-    };
-    
-    auto SafeLogFormat = [](const char* format, const wchar_t* arg) {
-        __try {
-            xlog::Normal(format, arg);
-        } __except(EXCEPTION_EXECUTE_HANDLER) {
-            // Continue without xlog if it fails
-        }
-    };
-    
-    SafeLog("Initializing SelfPacker protection...");
+    // Skip logging calls in unpacked environment to avoid lambda issues
+    // xlog::Normal("Initializing SelfPacker protection...");
     
     if (!AmalgamSelfPacker::InitializeEarlyProtection()) {
-        SafeLogError("SelfPacker protection initialization failed - application will exit");
+        // xlog::Error("SelfPacker protection initialization failed - application will exit");
         MessageBoxA(nullptr, "SelfPacker initialization failed. Check logs for details.", "AmalgamLoader Error", MB_OK | MB_ICONERROR);
         return 1;
     }
     
-    SafeLog("SelfPacker protection initialized successfully");
+    // xlog::Normal("SelfPacker protection initialized successfully");
     
     // Check for timestamp flag SECOND - after protection is initialized
     LPWSTR cmdLine = GetCommandLineW();
     
     // Debug: Log what we're doing
-    SafeLogFormat("Command line: %ws", cmdLine ? cmdLine : L"(null)");
+    // xlog::Normal("Command line: %ws", cmdLine ? cmdLine : L"(null)");
     
 process_timestamp:
     // Quick check for timestamp flag without complex parsing
