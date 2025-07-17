@@ -281,28 +281,40 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                             return -1;
                         }
                         
-                        // Try calling with a separate thread to isolate stack issues
-                        debug_log("Creating separate thread for entry point call...");
+                        // Skip the normal startup sequence and call wWinMain directly
+                        debug_log("Attempting to call wWinMain directly (skip CRT startup)...");
                         
-                        struct CallParams {
+                        struct WinMainParams {
                             void* func;
+                            HINSTANCE hInstance;
+                            LPWSTR lpCmdLine;
+                            int nCmdShow;
                             volatile bool completed;
                             volatile DWORD result;
                             volatile DWORD exception;
                         };
                         
-                        CallParams params = { voidFunc, false, 0, 0 };
+                        WinMainParams params = { 
+                            voidFunc, 
+                            (HINSTANCE)loaded_base, 
+                            GetCommandLineW(), 
+                            1, 
+                            false, 
+                            0, 
+                            0 
+                        };
                         
                         HANDLE hThread = CreateThread(NULL, 0x100000, // 1MB stack
                             [](LPVOID lpParam) -> DWORD {
-                                CallParams* p = (CallParams*)lpParam;
+                                WinMainParams* p = (WinMainParams*)lpParam;
                                 __try {
-                                    // Call as void function
-                                    typedef void (*VoidFunc)();
-                                    VoidFunc func = (VoidFunc)p->func;
-                                    func();
+                                    // Call as wWinMain function directly
+                                    typedef int (WINAPI *WinMainFunc)(HINSTANCE, HINSTANCE, LPWSTR, int);
+                                    WinMainFunc func = (WinMainFunc)p->func;
+                                    
+                                    // Call wWinMain with proper parameters
+                                    p->result = func(p->hInstance, NULL, p->lpCmdLine, p->nCmdShow);
                                     p->completed = true;
-                                    p->result = 0;
                                     return 0;
                                 } __except(EXCEPTION_EXECUTE_HANDLER) {
                                     p->exception = GetExceptionCode();
@@ -312,21 +324,22 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                             }, &params, 0, NULL);
                         
                         if (hThread) {
-                            debug_log("Waiting for thread to complete entry point call...");
-                            DWORD waitResult = WaitForSingleObject(hThread, 5000);
+                            debug_log("Waiting for wWinMain thread to complete...");
+                            DWORD waitResult = WaitForSingleObject(hThread, 10000); // 10 second timeout
                             
                             if (waitResult == WAIT_OBJECT_0) {
                                 if (params.completed) {
-                                    debug_log("Thread-based void call completed successfully!");
+                                    sprintf(log_msg, "Direct wWinMain call completed successfully! Return code: %d", params.result);
+                                    debug_log(log_msg);
                                     CloseHandle(hThread);
                                     if (veh) RemoveVectoredExceptionHandler(veh);
                                     return 0;
                                 } else {
-                                    sprintf(log_msg, "Thread-based void call failed with exception 0x%08X", params.exception);
+                                    sprintf(log_msg, "Direct wWinMain call failed with exception 0x%08X", params.exception);
                                     debug_log(log_msg);
                                 }
                             } else {
-                                debug_log("Thread-based call timed out or failed");
+                                debug_log("Direct wWinMain call timed out or failed");
                             }
                             CloseHandle(hThread);
                         }
