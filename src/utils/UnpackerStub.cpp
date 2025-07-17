@@ -233,6 +233,23 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                                 fprintf(crash_log, "[%lu] CRASH: Exception 0x%08X at address 0x%p\n", 
                                         GetTickCount(), ExceptionInfo->ExceptionRecord->ExceptionCode,
                                         ExceptionInfo->ExceptionRecord->ExceptionAddress);
+                                
+                                // Try to identify which module the crash occurred in
+                                HMODULE hMod;
+                                char modName[MAX_PATH] = {0};
+                                if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+                                                     (LPCSTR)ExceptionInfo->ExceptionRecord->ExceptionAddress,
+                                                     &hMod)) {
+                                    GetModuleFileNameA(hMod, modName, MAX_PATH);
+                                    fprintf(crash_log, "[%lu] CRASH MODULE: %s\n", GetTickCount(), modName);
+                                }
+                                
+                                // Log additional context
+                                fprintf(crash_log, "[%lu] CRASH CONTEXT: RIP=0x%p, RSP=0x%p\n",
+                                        GetTickCount(),
+                                        (void*)ExceptionInfo->ContextRecord->Rip,
+                                        (void*)ExceptionInfo->ContextRecord->Rsp);
+                                
                                 fflush(crash_log);
                                 fclose(crash_log);
                             }
@@ -482,7 +499,7 @@ void* load_pe(PBYTE pe_data, PBYTE* base_address, DWORD64* original_imagebase) {
     // because we can't overwrite the unpacker's own memory
     debug_log("load_pe: Checking DYNAMIC_BASE flag for memory allocation");
     
-    // Retry logic for memory allocation
+    // Retry logic for memory allocation - try preferred address first
     for (int retry = 0; retry < MAX_ALLOC_RETRIES && addrp == NULL; retry++) {
         if (retry > 0) {
             sprintf(log_msg, "load_pe: Memory allocation retry attempt %d/%d", retry + 1, MAX_ALLOC_RETRIES);
@@ -496,7 +513,28 @@ void* load_pe(PBYTE pe_data, PBYTE* base_address, DWORD64* original_imagebase) {
             if (retry == 0) debug_log("load_pe: DYNAMIC_BASE not set, but allocating new memory anyway (unpacker cannot overwrite itself)");
         }
         
-        addrp = (PBYTE)VirtualAlloc(NULL, p_NT_HDR->OptionalHeader.SizeOfImage, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+        // First try: Attempt to allocate at the preferred ImageBase address
+        if (retry == 0) {
+            sprintf(log_msg, "load_pe: Attempting to allocate at preferred ImageBase: 0x%llx", p_NT_HDR->OptionalHeader.ImageBase);
+            debug_log(log_msg);
+            
+            addrp = (PBYTE)VirtualAlloc((LPVOID)p_NT_HDR->OptionalHeader.ImageBase, 
+                                      p_NT_HDR->OptionalHeader.SizeOfImage, 
+                                      MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+            
+            if (addrp) {
+                debug_log("load_pe: Successfully allocated at preferred ImageBase - no relocations needed!");
+            } else {
+                DWORD error = GetLastError();
+                sprintf(log_msg, "load_pe: Failed to allocate at preferred ImageBase (error 0x%08X), trying any address...", error);
+                debug_log(log_msg);
+            }
+        }
+        
+        // Fallback: Allocate at any available address
+        if (addrp == NULL) {
+            addrp = (PBYTE)VirtualAlloc(NULL, p_NT_HDR->OptionalHeader.SizeOfImage, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+        }
         
         if (addrp == NULL) {
             DWORD error = GetLastError();
@@ -747,14 +785,18 @@ void* load_pe(PBYTE pe_data, PBYTE* base_address, DWORD64* original_imagebase) {
     debug_log("load_pe: Starting relocation fixes");
     
     // Use original pe-packer-x64 relocation approach - process relocations if directory exists
-    if (reloc_dir.VirtualAddress != 0 && reloc_dir.Size != 0) {
+    // BUT: Skip relocations if we loaded at the preferred ImageBase
+    ULONG_PTR delta_VA_reloc = ((ULONG_PTR)addrp) - p_NT_HDR->OptionalHeader.ImageBase;
+    
+    if (delta_VA_reloc == 0) {
+        debug_log("load_pe: Loaded at preferred ImageBase - skipping relocations");
+    } else if (reloc_dir.VirtualAddress != 0 && reloc_dir.Size != 0) {
         debug_log("load_pe: Processing relocations");
     
     sprintf(log_msg, "load_pe: Relocation directory - VA: 0x%x, Size: %d", reloc_dir.VirtualAddress, reloc_dir.Size);
     debug_log(log_msg);
     
     PIMAGE_BASE_RELOCATION p_reloc = (PIMAGE_BASE_RELOCATION)(addrp + reloc_dir.VirtualAddress);
-    ULONG_PTR delta_VA_reloc = ((ULONG_PTR)addrp) - p_NT_HDR->OptionalHeader.ImageBase;
     PBASE_RELOCATION_ENTRY reloc = NULL;
 
     sprintf(log_msg, "load_pe: Relocation delta: 0x%I64x", delta_VA_reloc);
@@ -849,8 +891,15 @@ void* load_pe(PBYTE pe_data, PBYTE* base_address, DWORD64* original_imagebase) {
             PIMAGE_TLS_CALLBACK* callbacks = (PIMAGE_TLS_CALLBACK*)(addrp + (tls_data->AddressOfCallBacks - p_NT_HDR->OptionalHeader.ImageBase));
             
             for (int i = 0; callbacks[i] != nullptr; i++) {
-                // Apply relocation to callback address
-                PIMAGE_TLS_CALLBACK relocated_callback = (PIMAGE_TLS_CALLBACK)((ULONG_PTR)callbacks[i] + delta_VA);
+                // Apply relocation to callback address only if needed
+                PIMAGE_TLS_CALLBACK relocated_callback;
+                if (delta_VA == 0) {
+                    // No relocation needed - use callback address directly
+                    relocated_callback = callbacks[i];
+                } else {
+                    // Apply relocation
+                    relocated_callback = (PIMAGE_TLS_CALLBACK)((ULONG_PTR)callbacks[i] + delta_VA);
+                }
                 
                 sprintf(log_msg, "load_pe: Calling TLS callback %d at 0x%p (relocated from 0x%p)", i, relocated_callback, callbacks[i]);
                 debug_log(log_msg);
