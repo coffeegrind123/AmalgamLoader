@@ -713,9 +713,30 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
     // Timestamp operations working correctly now
     
     // Initialize logging first - with safety check for unpacked environment
-    __try {
-        xlog::Normal("AmalgamLoader starting up...");
-        
+    bool loggingInitialized = false;
+    
+    // Use separate function to avoid C++ exception handling conflicts
+    auto SafeInitializeLogging = []() -> bool {
+        __try {
+            xlog::Normal("AmalgamLoader starting up...");
+            return true;
+        } __except(EXCEPTION_EXECUTE_HANDLER) {
+            // Logging failed - probably unpacked environment with incomplete CRT
+            FILE* crash_log = nullptr;
+            fopen_s(&crash_log, "emergency_debug.log", "a");
+            if (crash_log) {
+                fprintf(crash_log, "[%lu] wWinMain: Logging initialization FAILED (exception 0x%08X) - continuing without xlog\n", 
+                        GetTickCount(), GetExceptionCode());
+                fflush(crash_log);
+                fclose(crash_log);
+            }
+            return false;
+        }
+    };
+    
+    loggingInitialized = SafeInitializeLogging();
+    
+    if (loggingInitialized) {
         // Emergency debugging after logging init
         fopen_s(&emergency_log, "emergency_debug.log", "a");
         if (emergency_log) {
@@ -723,50 +744,48 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
             fflush(emergency_log);
             fclose(emergency_log);
         }
-    } __except(EXCEPTION_EXECUTE_HANDLER) {
-        // Logging failed - probably unpacked environment with incomplete CRT
-        FILE* crash_log = nullptr;
-        fopen_s(&crash_log, "emergency_debug.log", "a");
-        if (crash_log) {
-            fprintf(crash_log, "[%lu] wWinMain: Logging initialization FAILED (exception 0x%08X) - continuing without xlog\n", 
-                    GetTickCount(), GetExceptionCode());
-            fflush(crash_log);
-            fclose(crash_log);
-        }
     }
     
     // CRITICAL: Initialize SelfPacker protection FIRST - before ANY other code execution
-    __try {
-        xlog::Normal("Initializing SelfPacker protection...");
-    } __except(EXCEPTION_EXECUTE_HANDLER) {
-        // Continue without xlog if it fails
-    }
-    
-    if (!AmalgamSelfPacker::InitializeEarlyProtection()) {
+    auto SafeLog = [](const char* message) {
         __try {
-            xlog::Error("SelfPacker protection initialization failed - application will exit");
+            xlog::Normal(message);
         } __except(EXCEPTION_EXECUTE_HANDLER) {
             // Continue without xlog if it fails
         }
+    };
+    
+    auto SafeLogError = [](const char* message) {
+        __try {
+            xlog::Error(message);
+        } __except(EXCEPTION_EXECUTE_HANDLER) {
+            // Continue without xlog if it fails
+        }
+    };
+    
+    auto SafeLogFormat = [](const char* format, const wchar_t* arg) {
+        __try {
+            xlog::Normal(format, arg);
+        } __except(EXCEPTION_EXECUTE_HANDLER) {
+            // Continue without xlog if it fails
+        }
+    };
+    
+    SafeLog("Initializing SelfPacker protection...");
+    
+    if (!AmalgamSelfPacker::InitializeEarlyProtection()) {
+        SafeLogError("SelfPacker protection initialization failed - application will exit");
         MessageBoxA(nullptr, "SelfPacker initialization failed. Check logs for details.", "AmalgamLoader Error", MB_OK | MB_ICONERROR);
         return 1;
     }
     
-    __try {
-        xlog::Normal("SelfPacker protection initialized successfully");
-    } __except(EXCEPTION_EXECUTE_HANDLER) {
-        // Continue without xlog if it fails
-    }
+    SafeLog("SelfPacker protection initialized successfully");
     
     // Check for timestamp flag SECOND - after protection is initialized
     LPWSTR cmdLine = GetCommandLineW();
     
     // Debug: Log what we're doing
-    __try {
-        xlog::Normal("Command line: %ws", cmdLine ? cmdLine : L"(null)");
-    } __except(EXCEPTION_EXECUTE_HANDLER) {
-        // Continue without xlog if it fails
-    }
+    SafeLogFormat("Command line: %ws", cmdLine ? cmdLine : L"(null)");
     
 process_timestamp:
     // Quick check for timestamp flag without complex parsing
