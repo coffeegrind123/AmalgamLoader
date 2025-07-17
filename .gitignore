@@ -82,3 +82,8 @@ GeneratedFiles*/
 
 aestest/pe-packer/
 pe-tutorial/
+
+# Exclude tutorial and reference directories
+packer-tutorial/
+pe-packer/
+pe-packer-x64/
