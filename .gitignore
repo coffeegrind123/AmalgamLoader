@@ -81,3 +81,5 @@ GeneratedFiles*/
 *.db
 
 aestest/
+
+SelfPacker/

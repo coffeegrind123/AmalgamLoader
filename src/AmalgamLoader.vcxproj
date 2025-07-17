@@ -36,7 +36,7 @@
     <OutDir>$(SolutionDir)output\$(Platform)\$(Configuration)\</OutDir>
     <IntDir>$(ProjectDir)\AmalgamLoader\$(Platform)\$(Configuration)\</IntDir>
     <TargetName>AmalgamLoader</TargetName>
-    <IncludePath>$(ProjectDir)include;$(IncludePath)</IncludePath>
+    <IncludePath>$(ProjectDir)include;$(ProjectDir)..\SelfPacker;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -71,11 +71,15 @@
       <Command>echo Build completed. Applying timestamp obfuscation...
 echo Randomizing PE compilation timestamp...
 timeout /t 1 /nobreak >nul 2&gt;&amp;1
-"$(OutDir)$(TargetName).exe" --randomize-timestamp "$(OutDir)$(TargetName).exe"
-if %ERRORLEVEL% EQU 0 (
+echo Running: "$(OutDir)$(TargetName).exe" --randomize-timestamp "$(OutDir)$(TargetName).exe"
+"$(OutDir)$(TargetName).exe" --randomize-timestamp "$(OutDir)$(TargetName).exe" 2>&gt;&amp;1
+set TIMESTAMP_ERROR=%ERRORLEVEL%
+echo Exit code: %TIMESTAMP_ERROR%
+if %TIMESTAMP_ERROR% EQU 0 (
     echo Timestamp obfuscation completed successfully.
 ) else (
-    echo Timestamp obfuscation failed with error %ERRORLEVEL%.
+    echo Timestamp obfuscation failed with error %TIMESTAMP_ERROR%.
+    echo Check $(OutDir)Amalgam.log for details.
 )
 echo Applying build-time packing...
 "$(OutDir)$(TargetName).exe" --build-time-pack "$(OutDir)$(TargetName).exe" 2&gt;nul
@@ -91,9 +95,21 @@ echo Build post-processing complete.</Command>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="core\AmalgamLoader.cpp" />
+    <ClCompile Include="core\AmalgamSelfPacker.cpp" />
     <ClCompile Include="utils\SignatureRandomizer.cpp" />
     <ClCompile Include="utils\TimestampRandomizer.cpp" />
     <ClCompile Include="core\ProcessClient.cpp" />
+    <ClCompile Include="..\SelfPacker\SelfPacker.cpp" />
+    <ClCompile Include="..\SelfPacker\adler32.c" />
+    <ClCompile Include="..\SelfPacker\compress.c" />
+    <ClCompile Include="..\SelfPacker\crc32.c" />
+    <ClCompile Include="..\SelfPacker\deflate.c" />
+    <ClCompile Include="..\SelfPacker\inffast.c" />
+    <ClCompile Include="..\SelfPacker\inflate.c" />
+    <ClCompile Include="..\SelfPacker\inftrees.c" />
+    <ClCompile Include="..\SelfPacker\trees.c" />
+    <ClCompile Include="..\SelfPacker\uncompr.c" />
+    <ClCompile Include="..\SelfPacker\zutil.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="utils\SignatureRandomizer.h" />
@@ -103,6 +119,16 @@ echo Build post-processing complete.</Command>
     <ClInclude Include="include\Obfuscation.h" />
     <ClInclude Include="include\StringObfuscation.h" />
     <ClInclude Include="include\ProcessClient.h" />
+    <ClInclude Include="include\SelfPacker.h" />
+    <ClInclude Include="..\SelfPacker\SelfPacker.h" />
+    <ClInclude Include="..\SelfPacker\zlib.h" />
+    <ClInclude Include="..\SelfPacker\zconf.h" />
+    <ClInclude Include="..\SelfPacker\deflate.h" />
+    <ClInclude Include="..\SelfPacker\inflate.h" />
+    <ClInclude Include="..\SelfPacker\inftrees.h" />
+    <ClInclude Include="..\SelfPacker\inffast.h" />
+    <ClInclude Include="..\SelfPacker\trees.h" />
+    <ClInclude Include="..\SelfPacker\crc32.h" />
   </ItemGroup>
   <PropertyGroup>
     <VcpkgEnabled>false</VcpkgEnabled>

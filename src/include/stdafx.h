@@ -9,6 +9,7 @@
 // Windows Header Files:
 #include <windows.h>
 #include <Psapi.h>
+#include <TlHelp32.h>
 
 // C RunTime Header Files
 #include <stdlib.h>

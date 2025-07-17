@@ -4,6 +4,7 @@
 #include "../utils/TimestampRandomizer.h"
 #include "../include/Obfuscation.h"
 #include "../include/ProcessClient.h"
+#include "../include/SelfPacker.h"
 #include <shellapi.h>
 #include <set>
 #include <thread>
@@ -374,6 +375,14 @@ private:
     bool InjectIntoProcess(DWORD pid) {
         xlog::Normal("Using manual mapping injection for PID %d", pid);
         
+        // Apply SelfPacker DLL mutations before injection for enhanced evasion
+        if (AmalgamSelfPacker::IsProtectedEnvironment()) {
+            xlog::Normal("Applying SelfPacker DLL mutations before injection...");
+            if (!AmalgamSelfPacker::MutateDLLForInjection(_targetDllPath)) {
+                xlog::Warning("DLL mutation failed, continuing with original DLL");
+            }
+        }
+        
         // Convert DLL path to char*
         std::string dllPathA;
         int requiredSize = WideCharToMultiByte(CP_UTF8, 0, _targetDllPath.c_str(), -1, nullptr, 0, nullptr, nullptr);
@@ -452,11 +461,29 @@ private:
 
 int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine, int nCmdShow) {
     
-    // CRITICAL: Check for timestamp flag FIRST - before ANY other code execution
+    // Timestamp operations working correctly now
+    
+    // Initialize logging first
+    xlog::Normal("AmalgamLoader starting up...");
+    
+    // CRITICAL: Initialize SelfPacker protection FIRST - before ANY other code execution
+    xlog::Normal("Initializing SelfPacker protection...");
+    if (!AmalgamSelfPacker::InitializeEarlyProtection()) {
+        xlog::Error("SelfPacker protection initialization failed - application will exit");
+        MessageBoxA(nullptr, "SelfPacker initialization failed. Check logs for details.", "AmalgamLoader Error", MB_OK | MB_ICONERROR);
+        return 1;
+    }
+    xlog::Normal("SelfPacker protection initialized successfully");
+    
+    // Check for timestamp flag SECOND - after protection is initialized
     LPWSTR cmdLine = GetCommandLineW();
+    
+    // Debug: Log what we're doing
+    xlog::Normal("Command line: %ws", cmdLine ? cmdLine : L"(null)");
     
     // Quick check for timestamp flag without complex parsing
     if (cmdLine && wcsstr(cmdLine, L"--randomize-timestamp")) {
+        xlog::Normal("Timestamp randomization flag detected");
         // Parse more carefully to get the target file
         int argc = 0;
         wchar_t** argv = CommandLineToArgvW(cmdLine, &argc);
@@ -524,6 +551,7 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
                     }
                     
                     LocalFree(argv);
+                    xlog::Normal("Timestamp randomization completed successfully");
                     return 0; // Exit immediately after timestamp randomization
                 }
             }
@@ -546,6 +574,16 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
                     
                     // Perform build-time packing operations on the target file
                     // This does the packing without the firstrun renaming logic
+                    
+                    // Apply SelfPacker build-time packing FIRST
+                    std::wstring packedFile = targetFile + L".packed.tmp";
+                    if (!AmalgamSelfPacker::PackExecutableForDistribution(targetFile, packedFile)) {
+                        xlog::Warning("SelfPacker build-time packing failed, continuing with signature randomization only");
+                    } else {
+                        // Use packed file for subsequent operations
+                        targetFile = packedFile;
+                        xlog::Normal("SelfPacker build-time packing completed");
+                    }
                     
                     // Randomize the executable (overlay, resources, etc.)
                     if (!SignatureRandomizer::RandomizeExecutable(targetFile)) {
@@ -649,6 +687,14 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
         
         try {
             randomizeResult = SignatureRandomizer::RandomizeSignatures();
+            
+            // Apply SelfPacker runtime protection after signature randomization
+            if (randomizeResult) {
+                xlog::Normal("Applying SelfPacker runtime protection...");
+                if (!AmalgamSelfPacker::ApplyRuntimeProtection()) {
+                    xlog::Warning("SelfPacker runtime protection failed");
+                }
+            }
         } catch (...) {
             xlog::Error("Exception occurred during RandomizeSignatures()");
         }
