@@ -1,1 +1,0 @@
-// Empty resource header for AmalgamLoader

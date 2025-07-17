@@ -16,7 +16,6 @@ private:
     static std::vector<uint8_t> GenerateRandomData(size_t size);
     static bool ModifyPEOverlay(const std::wstring& filePath, const std::vector<uint8_t>& randomData);
     static bool ModifyResourceSection(const std::wstring& filePath);
-    static bool AddDummyResources(const std::wstring& filePath);
     static std::wstring GetSystemFingerprint();
     static void MarkAsProcessed();
     static bool IsAlreadyProcessed(const std::wstring& filePath);
@@ -40,16 +39,12 @@ private:
     static bool MutateCodeSectionsSafely(const std::wstring& filePath);
     static bool InsertPolymorphicCode(const std::wstring& filePath);
     static bool RandomizeSectionNames(const std::wstring& filePath);
-    static bool ObfuscateImportTable(const std::wstring& filePath);
     static bool AddJunkSections(const std::wstring& filePath);
     static bool ApplyAntiAnalysisTechniques(const std::wstring& filePath);
     
     // PE manipulation helpers
-    static bool ModifyPEHeaders(const std::wstring& filePath);
     static bool InsertJunkCode(std::vector<uint8_t>& peData, size_t insertPos);
     static bool IsCompilerPadding(const std::vector<uint8_t>& peData, size_t pos);
-    static bool RandomizeEntryPoint(const std::wstring& filePath);
-    static bool EncryptCodeSections(const std::wstring& filePath);
     static void ApplyCodeMutations(std::vector<uint8_t>& peData, size_t sectionStart, size_t sectionSize);
     
     // Constants for modification

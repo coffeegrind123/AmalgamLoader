@@ -1,10 +1,9 @@
-#include "stdafx.h"
-#include "Log.h"
-// #include "DumpHandler.h"  // Disabled to prevent unnecessary dump files
-#include "SignatureRandomizer.h"
-#include "TimestampRandomizer.h"
-#include "../obfuscate.h"
-#include "../pclient.h"
+#include "../include/stdafx.h"
+#include "../include/Log.h"
+#include "../utils/SignatureRandomizer.h"
+#include "../utils/TimestampRandomizer.h"
+#include "../include/Obfuscation.h"
+#include "../include/ProcessClient.h"
 #include <shellapi.h>
 #include <set>
 #include <thread>
@@ -452,8 +451,6 @@ private:
 };
 
 int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine, int nCmdShow) {
-    // Setup dump generation (disabled to prevent unnecessary dump files)
-    // dump::DumpHandler::Instance().CreateWatchdog( blackbone::Utils::GetExeDirectory(), dump::CreateFullDump );
     
     // CRITICAL: Check for timestamp flag FIRST - before ANY other code execution
     LPWSTR cmdLine = GetCommandLineW();

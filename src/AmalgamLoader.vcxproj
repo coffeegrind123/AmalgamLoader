@@ -36,7 +36,7 @@
     <OutDir>$(SolutionDir)output\$(Platform)\$(Configuration)\</OutDir>
     <IntDir>$(ProjectDir)\AmalgamLoader\$(Platform)\$(Configuration)\</IntDir>
     <TargetName>AmalgamLoader</TargetName>
-    <IncludePath>$(ProjectDir)..;$(IncludePath)</IncludePath>
+    <IncludePath>$(ProjectDir)include;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -83,8 +83,6 @@ echo Build-time packing completed.
 echo Cleaning up build artifacts...
 del "$(OutDir)$(TargetName).exp" 2&gt;nul
 del "$(OutDir)$(TargetName).lib" 2&gt;nul
-del "$(OutDir)BlackBone.lib" 2&gt;nul
-del "$(OutDir)BlackBone.pdb" 2&gt;nul
 del "$(OutDir)msdia140.dll" 2&gt;nul
 del "$(OutDir)symsrv.dll" 2&gt;nul
 echo Build post-processing complete.</Command>
@@ -92,44 +90,19 @@ echo Build post-processing complete.</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="AmalgamLoader.cpp" />
-    <ClCompile Include="SignatureRandomizer.cpp" />
-    <ClCompile Include="TimestampRandomizer.cpp" />
-    <ClCompile Include="..\pclient.cpp" />
-    <ClCompile Include="SelfPacker\SelfPacker.cpp" />
-    <ClCompile Include="SelfPacker\adler32.c" />
-    <ClCompile Include="SelfPacker\compress.c" />
-    <ClCompile Include="SelfPacker\crc32.c" />
-    <ClCompile Include="SelfPacker\deflate.c" />
-    <ClCompile Include="SelfPacker\inffast.c" />
-    <ClCompile Include="SelfPacker\inflate.c" />
-    <ClCompile Include="SelfPacker\inftrees.c" />
-    <ClCompile Include="SelfPacker\trees.c" />
-    <ClCompile Include="SelfPacker\uncompr.c" />
-    <ClCompile Include="SelfPacker\zutil.c" />
+    <ClCompile Include="core\AmalgamLoader.cpp" />
+    <ClCompile Include="utils\SignatureRandomizer.cpp" />
+    <ClCompile Include="utils\TimestampRandomizer.cpp" />
+    <ClCompile Include="core\ProcessClient.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="SignatureRandomizer.h" />
-    <ClInclude Include="TimestampRandomizer.h" />
-    <ClInclude Include="SelfPacker\SelfPacker.h" />
-    <ClInclude Include="SelfPacker\zlib.h" />
-    <ClInclude Include="SelfPacker\zconf.h" />
-    <ClInclude Include="SelfPacker\deflate.h" />
-    <ClInclude Include="SelfPacker\inflate.h" />
-    <ClInclude Include="SelfPacker\crc32.h" />
-    <ClInclude Include="Log.h" />
-    <ClInclude Include="stdafx.h" />
-    <ClInclude Include="..\cmut.hxx" />
-    <ClInclude Include="..\obfuscate.h" />
-    <ClInclude Include="..\obfuscate_extended.h" />
-    <ClInclude Include="..\skStr.h" />
-    <ClInclude Include="..\pclient.h" />
-  </ItemGroup>
-  <ItemGroup>
-  </ItemGroup>
-  <ItemGroup>
-  </ItemGroup>
-  <ItemGroup>
+    <ClInclude Include="utils\SignatureRandomizer.h" />
+    <ClInclude Include="utils\TimestampRandomizer.h" />
+    <ClInclude Include="include\Log.h" />
+    <ClInclude Include="include\stdafx.h" />
+    <ClInclude Include="include\Obfuscation.h" />
+    <ClInclude Include="include\StringObfuscation.h" />
+    <ClInclude Include="include\ProcessClient.h" />
   </ItemGroup>
   <PropertyGroup>
     <VcpkgEnabled>false</VcpkgEnabled>

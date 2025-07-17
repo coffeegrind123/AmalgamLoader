@@ -1,4 +1,0 @@
-[submodule "ext/blackbone"]
-	path = ext/blackbone
-	url = git@github.com:coffeegrind123/Blackbone.git
-	branch = master

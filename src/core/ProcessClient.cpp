@@ -15,8 +15,8 @@
 #include <iostream>
 #include <string>
 #include <cstring>
-#include "skStr.h"
-#include "src/Log.h"
+#include "../include/StringObfuscation.h"
+#include "../include/Log.h"
 
 // Function pointer types for LoadLibraryA and GetProcAddress
 // These will be passed to the remote process since it can't directly call these functions
