@@ -281,48 +281,61 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                             return -1;
                         }
                         
-                        // Try calling the entry point through normal Windows startup sequence
-                        debug_log("Creating separate process to run unpacked PE...");
+                        // Try calling the entry point as a void function in a new thread with proper stack
+                        debug_log("Attempting void call in new thread with proper C runtime context...");
                         
-                        // Write the unpacked PE to a temporary file
-                        char tempPath[MAX_PATH];
-                        GetTempPathA(MAX_PATH, tempPath);
-                        strcat_s(tempPath, MAX_PATH, "AmalgamLoader_unpacked.exe");
+                        struct ThreadParams {
+                            void* func;
+                            HINSTANCE hInst;
+                            volatile bool started;
+                            volatile bool completed;
+                            volatile DWORD result;
+                        };
                         
-                        FILE* tempFile = nullptr;
-                        fopen_s(&tempFile, tempPath, "wb");
-                        if (tempFile) {
-                            // Write the entire loaded PE to disk
-                            fwrite(loaded_base, 1, 0x78000, tempFile); // Use SizeOfImage
-                            fclose(tempFile);
-                            
-                            sprintf(log_msg, "Unpacked PE written to: %s", tempPath);
-                            debug_log(log_msg);
-                            
-                            // Launch the unpacked PE as a separate process
-                            STARTUPINFOA si = {0};
-                            PROCESS_INFORMATION pi = {0};
-                            si.cb = sizeof(si);
-                            
-                            if (CreateProcessA(tempPath, NULL, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
-                                debug_log("Unpacked PE launched successfully as separate process");
+                        ThreadParams params = { voidFunc, (HINSTANCE)loaded_base, false, false, 0 };
+                        
+                        HANDLE hThread = CreateThread(NULL, 0x200000, // 2MB stack
+                            [](LPVOID lpParam) -> DWORD {
+                                ThreadParams* p = (ThreadParams*)lpParam;
+                                p->started = true;
                                 
-                                // Close process handles
-                                CloseHandle(pi.hProcess);
-                                CloseHandle(pi.hThread);
+                                __try {
+                                    // Call the entry point as void function - let it handle its own initialization
+                                    typedef void (*VoidFunc)();
+                                    VoidFunc func = (VoidFunc)p->func;
+                                    func();
+                                    p->completed = true;
+                                    return 0;
+                                } __except(EXCEPTION_EXECUTE_HANDLER) {
+                                    // If it crashes, at least we tried
+                                    return GetExceptionCode();
+                                }
+                            }, &params, 0, NULL);
+                        
+                        if (hThread) {
+                            debug_log("Entry point thread created, waiting for startup...");
+                            
+                            // Wait for thread to start
+                            Sleep(100);
+                            
+                            if (params.started) {
+                                debug_log("Entry point thread started successfully");
                                 
+                                // Give it some time to initialize, then exit the unpacker
+                                Sleep(1000);
+                                
+                                CloseHandle(hThread);
                                 if (veh) RemoveVectoredExceptionHandler(veh);
-                                return 0; // Success!
+                                
+                                debug_log("Entry point thread running - unpacker exiting");
+                                ExitProcess(0);
                             } else {
-                                DWORD error = GetLastError();
-                                sprintf(log_msg, "Failed to launch unpacked PE: error 0x%08X", error);
-                                debug_log(log_msg);
+                                debug_log("Entry point thread failed to start");
+                                CloseHandle(hThread);
                             }
-                        } else {
-                            debug_log("Failed to create temporary file for unpacked PE");
                         }
                         
-                        debug_log("Separate process launch failed - trying direct call as fallback...");
+                        debug_log("Thread approach failed - trying direct call as fallback...");
                         
                         // Fallback to direct call
                         __try {
