@@ -128,8 +128,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             debug_log("Flushing log before wWinMain call...");
             fflush(stdout);
             
-            // Add a small delay to ensure logging is flushed
-            Sleep(10);
+            // Add delays between critical operations to prevent timing issues
+            Sleep(50);
             
             // Try a simple test first - read the first few bytes of the entry point
             __try {
@@ -169,7 +169,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                 // Flush all logs and ensure everything is written
                 fflush(stdout);
                 fflush(stderr);
-                Sleep(50);
+                Sleep(100); // Increased delay before critical call
                 
                 // Try calling in a separate thread to avoid stack issues
                 debug_log("Attempting direct call first...");
@@ -200,30 +200,106 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                     if (func_addr >= loaded_start && func_addr < loaded_end) {
                         debug_log("Function address is within loaded PE range - trying void call...");
                         
-                        // Try calling as void function first
+                        // Force flush all logs before critical call
+                        fflush(stdout);
+                        fflush(stderr);
+                        
+                        // Check if memory is actually executable
+                        MEMORY_BASIC_INFORMATION mbi_exec;
+                        if (VirtualQuery((LPCVOID)func_addr, &mbi_exec, sizeof(mbi_exec))) {
+                            sprintf(log_msg, "Entry point memory: Protect=0x%08X, State=0x%08X, Type=0x%08X", 
+                                    mbi_exec.Protect, mbi_exec.State, mbi_exec.Type);
+                            debug_log(log_msg);
+                            
+                            if (!(mbi_exec.Protect & (PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE))) {
+                                debug_log("ERROR: Entry point memory is not executable!");
+                                
+                                // Try to make it executable
+                                DWORD oldProtect;
+                                if (VirtualProtect((LPVOID)func_addr, 4096, PAGE_EXECUTE_READ, &oldProtect)) {
+                                    debug_log("Successfully made entry point executable");
+                                } else {
+                                    debug_log("FAILED to make entry point executable");
+                                    return -1;
+                                }
+                            }
+                        }
+                        
+                        // Add vectored exception handler for better crash debugging
+                        PVOID veh = AddVectoredExceptionHandler(1, [](PEXCEPTION_POINTERS ExceptionInfo) -> LONG {
+                            FILE* crash_log = nullptr;
+                            fopen_s(&crash_log, "unpacker_crash.log", "a");
+                            if (crash_log) {
+                                fprintf(crash_log, "[%lu] CRASH: Exception 0x%08X at address 0x%p\n", 
+                                        GetTickCount(), ExceptionInfo->ExceptionRecord->ExceptionCode,
+                                        ExceptionInfo->ExceptionRecord->ExceptionAddress);
+                                fflush(crash_log);
+                                fclose(crash_log);
+                            }
+                            return EXCEPTION_CONTINUE_SEARCH;
+                        });
+                        
+                        // Try calling as void function first with proper exception handling
+                        debug_log("About to call void function - this is the moment of truth...");
+                        
                         __try {
+                            // Call the function directly - let the compiler handle calling convention
+                            debug_log("Calling void function now...");
                             voidFunc();
+                            debug_log("Void function returned without exception!");
+                            
                             debug_log("Void function call returned successfully!");
+                            if (veh) RemoveVectoredExceptionHandler(veh);
                             return 0; // Success!
                         } __except(EXCEPTION_EXECUTE_HANDLER) {
                             DWORD voidExceptionCode = GetExceptionCode();
                             sprintf(log_msg, "Void call failed with exception 0x%08X, trying WinMain call...", voidExceptionCode);
                             debug_log(log_msg);
+                            
+                            // Enhanced exception logging for void call
+                            if (voidExceptionCode == 0xC0000005) {
+                                debug_log("Void call exception: Access Violation - Invalid memory access");
+                            } else if (voidExceptionCode == 0xC000001D) {
+                                debug_log("Void call exception: Illegal Instruction - Invalid CPU instruction");
+                            } else if (voidExceptionCode == 0xC00000FD) {
+                                debug_log("Void call exception: Stack Overflow - Stack space exhausted");
+                            } else if (voidExceptionCode == 0xC0000096) {
+                                debug_log("Void call exception: Privileged Instruction");
+                            }
                         }
                         
                         // If void call failed, try calling as WinMain
                         debug_log("Attempting to call as WinMain function...");
-                        typedef int (WINAPI *WinMainFunc)(HINSTANCE, HINSTANCE, LPWSTR, int);
-                        WinMainFunc winMainFunc = (WinMainFunc)voidFunc;
                         
-                        // Get wide command line
-                        LPWSTR lpCmdLineW = GetCommandLineW();
-                        HINSTANCE peInstance = (HINSTANCE)loaded_base;
+                        __try {
+                            typedef int (WINAPI *WinMainFunc)(HINSTANCE, HINSTANCE, LPWSTR, int);
+                            WinMainFunc winMainFunc = (WinMainFunc)voidFunc;
+                            
+                            // Get wide command line
+                            LPWSTR lpCmdLineW = GetCommandLineW();
+                            HINSTANCE peInstance = (HINSTANCE)loaded_base;
+                            
+                            debug_log("Calling as wWinMain with proper parameters...");
+                            int result = winMainFunc(peInstance, NULL, lpCmdLineW, 1);
+                            sprintf(log_msg, "WinMain call returned with code: %d", result);
+                            debug_log(log_msg);
+                            
+                            if (veh) RemoveVectoredExceptionHandler(veh);
+                            return 0; // Success!
+                        } __except(EXCEPTION_EXECUTE_HANDLER) {
+                            DWORD winMainException = GetExceptionCode();
+                            sprintf(log_msg, "WinMain call failed with exception 0x%08X", winMainException);
+                            debug_log(log_msg);
+                            
+                            if (winMainException == 0xC0000005) {
+                                debug_log("WinMain exception: Access Violation");
+                            } else if (winMainException == 0xC000001D) {
+                                debug_log("WinMain exception: Illegal Instruction");
+                            }
+                        }
                         
-                        int result = winMainFunc(peInstance, NULL, lpCmdLineW, 1);
-                        sprintf(log_msg, "WinMain call returned with code: %d", result);
-                        debug_log(log_msg);
-                        return 0; // Success!
+                        if (veh) RemoveVectoredExceptionHandler(veh);
+                        debug_log("CRITICAL: Both void and WinMain calls failed!");
                     } else {
                         debug_log("ERROR: Function address is outside loaded PE range!");
                     }
@@ -284,7 +360,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                 
                 if (hThread) {
                     debug_log("Entry point thread created, waiting for completion...");
-                    DWORD waitResult = WaitForSingleObject(hThread, 5000); // 5 second timeout
+                    DWORD waitResult = WaitForSingleObject(hThread, 10000); // 10 second timeout (increased)
                     
                     if (waitResult == WAIT_OBJECT_0) {
                         if (params.completed) {
@@ -399,21 +475,47 @@ void* load_pe(PBYTE pe_data, PBYTE* base_address, DWORD64* original_imagebase) {
     // [ Allocate memory ]
 
     PBYTE addrp = NULL;
+    const int MAX_ALLOC_RETRIES = 5;
+    const DWORD RETRY_DELAY_MS = 100;
 
     // Use the original pe-packer-x64 memory allocation approach, but always allocate new memory
     // because we can't overwrite the unpacker's own memory
     debug_log("load_pe: Checking DYNAMIC_BASE flag for memory allocation");
     
-    if (p_NT_HDR->OptionalHeader.DllCharacteristics & IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE) {
-        debug_log("load_pe: DYNAMIC_BASE set, allocating new memory");
+    // Retry logic for memory allocation
+    for (int retry = 0; retry < MAX_ALLOC_RETRIES && addrp == NULL; retry++) {
+        if (retry > 0) {
+            sprintf(log_msg, "load_pe: Memory allocation retry attempt %d/%d", retry + 1, MAX_ALLOC_RETRIES);
+            debug_log(log_msg);
+            Sleep(RETRY_DELAY_MS * retry); // Exponential backoff
+        }
+        
+        if (p_NT_HDR->OptionalHeader.DllCharacteristics & IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE) {
+            if (retry == 0) debug_log("load_pe: DYNAMIC_BASE set, allocating new memory");
+        } else {
+            if (retry == 0) debug_log("load_pe: DYNAMIC_BASE not set, but allocating new memory anyway (unpacker cannot overwrite itself)");
+        }
+        
         addrp = (PBYTE)VirtualAlloc(NULL, p_NT_HDR->OptionalHeader.SizeOfImage, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-    } else {
-        debug_log("load_pe: DYNAMIC_BASE not set, but allocating new memory anyway (unpacker cannot overwrite itself)");
-        addrp = (PBYTE)VirtualAlloc(NULL, p_NT_HDR->OptionalHeader.SizeOfImage, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+        
+        if (addrp == NULL) {
+            DWORD error = GetLastError();
+            sprintf(log_msg, "load_pe: Memory allocation attempt %d failed with error 0x%08X", retry + 1, error);
+            debug_log(log_msg);
+            
+            // Log specific error codes
+            if (error == ERROR_NOT_ENOUGH_MEMORY) {
+                debug_log("load_pe: Error: Insufficient memory available");
+            } else if (error == ERROR_INVALID_PARAMETER) {
+                debug_log("load_pe: Error: Invalid memory allocation parameters");
+            } else if (error == ERROR_COMMITMENT_LIMIT) {
+                debug_log("load_pe: Error: System commitment limit reached");
+            }
+        }
     }
 
     if (addrp == NULL) {
-        debug_log("load_pe: ERROR - Failed to allocate memory");
+        debug_log("load_pe: CRITICAL ERROR - Failed to allocate memory after all retries");
         return NULL;
     }
     
@@ -438,12 +540,21 @@ void* load_pe(PBYTE pe_data, PBYTE* base_address, DWORD64* original_imagebase) {
         return NULL;
     }
     
-    // Try the memcpy operation with exception handling
+    // Try the memcpy operation with exception handling and validation
     __try {
+        // Validate header size before copying
+        if (p_NT_HDR->OptionalHeader.SizeOfHeaders > p_NT_HDR->OptionalHeader.SizeOfImage) {
+            debug_log("load_pe: ERROR - Invalid header size (larger than image)");
+            return NULL;
+        }
+        
         memcpy(addrp, pe_data, p_NT_HDR->OptionalHeader.SizeOfHeaders);
         debug_log("load_pe: Header copy successful");
     } __except(EXCEPTION_EXECUTE_HANDLER) {
-        debug_log("load_pe: ERROR - Header copy failed!");
+        DWORD exceptionCode = GetExceptionCode();
+        sprintf(log_msg, "load_pe: CRITICAL ERROR - Header copy failed with exception 0x%08X", exceptionCode);
+        debug_log(log_msg);
+        VirtualFree(addrp, 0, MEM_RELEASE);
         return NULL;
     }
     
@@ -457,18 +568,46 @@ void* load_pe(PBYTE pe_data, PBYTE* base_address, DWORD64* original_imagebase) {
         PBYTE dest = addrp + sections[i].VirtualAddress;
 
         __try {
+            // Validate section before mapping
+            if (sections[i].VirtualAddress + sections[i].Misc.VirtualSize > p_NT_HDR->OptionalHeader.SizeOfImage) {
+                sprintf(log_msg, "load_pe: ERROR - Section %d extends beyond image boundary", i);
+                debug_log(log_msg);
+                VirtualFree(addrp, 0, MEM_RELEASE);
+                return NULL;
+            }
+            
             if (sections[i].SizeOfRawData > 0) {
+                // Validate raw data pointer
+                if (sections[i].PointerToRawData + sections[i].SizeOfRawData > p_NT_HDR->OptionalHeader.SizeOfImage * 2) {
+                    sprintf(log_msg, "load_pe: ERROR - Section %d raw data pointer invalid", i);
+                    debug_log(log_msg);
+                    VirtualFree(addrp, 0, MEM_RELEASE);
+                    return NULL;
+                }
+                
                 DWORD oldProtect;
-                VirtualProtect(dest, sections[i].SizeOfRawData, PAGE_READWRITE, &oldProtect);
+                if (!VirtualProtect(dest, sections[i].SizeOfRawData, PAGE_READWRITE, &oldProtect)) {
+                    sprintf(log_msg, "load_pe: ERROR - Failed to set write protection for section %d", i);
+                    debug_log(log_msg);
+                    VirtualFree(addrp, 0, MEM_RELEASE);
+                    return NULL;
+                }
                 memcpy(dest, pe_data + sections[i].PointerToRawData, sections[i].SizeOfRawData);
             } else {
                 DWORD oldProtect;
-                VirtualProtect(dest, sections[i].Misc.VirtualSize, PAGE_READWRITE, &oldProtect);
+                if (!VirtualProtect(dest, sections[i].Misc.VirtualSize, PAGE_READWRITE, &oldProtect)) {
+                    sprintf(log_msg, "load_pe: ERROR - Failed to set write protection for section %d", i);
+                    debug_log(log_msg);
+                    VirtualFree(addrp, 0, MEM_RELEASE);
+                    return NULL;
+                }
                 memset(dest, 0, sections[i].Misc.VirtualSize);
             }
         } __except(EXCEPTION_EXECUTE_HANDLER) {
-            sprintf(log_msg, "load_pe: ERROR - Section %d mapping failed!", i);
+            DWORD exceptionCode = GetExceptionCode();
+            sprintf(log_msg, "load_pe: CRITICAL ERROR - Section %d mapping failed with exception 0x%08X", i, exceptionCode);
             debug_log(log_msg);
+            VirtualFree(addrp, 0, MEM_RELEASE);
             return NULL;
         }
     }
@@ -478,6 +617,16 @@ void* load_pe(PBYTE pe_data, PBYTE* base_address, DWORD64* original_imagebase) {
     // [ Fix imports ]
 
     debug_log("load_pe: Starting import resolution");
+    
+    // Validate import directory before processing
+    if (import_dir.VirtualAddress == 0 || import_dir.Size == 0) {
+        debug_log("load_pe: No import directory found, skipping import resolution");
+    } else if (import_dir.VirtualAddress >= p_NT_HDR->OptionalHeader.SizeOfImage) {
+        debug_log("load_pe: ERROR - Import directory address is outside image bounds");
+        VirtualFree(addrp, 0, MEM_RELEASE);
+        return NULL;
+    } else {
+    
     IMAGE_IMPORT_DESCRIPTOR* import_descriptors = (IMAGE_IMPORT_DESCRIPTOR*)(addrp + import_dir.VirtualAddress);
 
     for (int i = 0; import_descriptors[i].OriginalFirstThunk != 0; i++) {
@@ -485,10 +634,28 @@ void* load_pe(PBYTE pe_data, PBYTE* base_address, DWORD64* original_imagebase) {
         sprintf(log_msg, "load_pe: Loading module: %s", (char*)module_name);
         debug_log(log_msg);
         
-        HMODULE import_module = LoadLibraryA((LPCSTR)module_name);
+        HMODULE import_module = NULL;
+        const int MAX_LOAD_RETRIES = 3;
+        
+        // Retry logic for module loading
+        for (int retry = 0; retry < MAX_LOAD_RETRIES && import_module == NULL; retry++) {
+            if (retry > 0) {
+                sprintf(log_msg, "load_pe: Module load retry attempt %d/%d for %s", retry + 1, MAX_LOAD_RETRIES, (char*)module_name);
+                debug_log(log_msg);
+                Sleep(50 * retry); // Brief delay between retries
+            }
+            
+            import_module = LoadLibraryA((LPCSTR)module_name);
+            
+            if (import_module == NULL) {
+                DWORD error = GetLastError();
+                sprintf(log_msg, "load_pe: Module load attempt %d failed with error 0x%08X for %s", retry + 1, error, (char*)module_name);
+                debug_log(log_msg);
+            }
+        }
 
         if (import_module == NULL) {
-            sprintf(log_msg, "load_pe: ERROR - Failed to load module: %s", (char*)module_name);
+            sprintf(log_msg, "load_pe: CRITICAL ERROR - Failed to load module after all retries: %s", (char*)module_name);
             debug_log(log_msg);
             return NULL;
         }
@@ -540,7 +707,10 @@ void* load_pe(PBYTE pe_data, PBYTE* base_address, DWORD64* original_imagebase) {
                 }
                 
                 if (function_handle == NULL) {
-                    sprintf(log_msg, "load_pe: ERROR - Failed to resolve function: %s", funct_name ? funct_name : "UNKNOWN");
+                    DWORD error = GetLastError();
+                    sprintf(log_msg, "load_pe: CRITICAL ERROR - Failed to resolve function: %s (error 0x%08X)", funct_name ? funct_name : "UNKNOWN", error);
+                    debug_log(log_msg);
+                    sprintf(log_msg, "load_pe: Module: %s, Function: %s", (char*)(addrp + import_descriptors[i].Name), funct_name ? funct_name : "UNKNOWN");
                     debug_log(log_msg);
                     return NULL;
                 }
@@ -553,7 +723,10 @@ void* load_pe(PBYTE pe_data, PBYTE* base_address, DWORD64* original_imagebase) {
                 function_handle = (PVOID)GetProcAddress(import_module, MAKEINTRESOURCEA(ordinal));
                 
                 if (function_handle == NULL) {
-                    sprintf(log_msg, "load_pe: ERROR - Failed to resolve function by ordinal: %d", ordinal);
+                    DWORD error = GetLastError();
+                    sprintf(log_msg, "load_pe: CRITICAL ERROR - Failed to resolve function by ordinal: %d (error 0x%08X)", ordinal, error);
+                    debug_log(log_msg);
+                    sprintf(log_msg, "load_pe: Module: %s, Ordinal: %d", (char*)(addrp + import_descriptors[i].Name), ordinal);
                     debug_log(log_msg);
                     return NULL;
                 }
@@ -567,6 +740,7 @@ void* load_pe(PBYTE pe_data, PBYTE* base_address, DWORD64* original_imagebase) {
     }
 
     debug_log("load_pe: Import resolution completed");
+    } // End of import processing
 
     // [ Fix relocations ]
 
@@ -615,7 +789,10 @@ void* load_pe(PBYTE pe_data, PBYTE* base_address, DWORD64* original_imagebase) {
                 reloc++;
             }
         } __except(EXCEPTION_EXECUTE_HANDLER) {
-            sprintf(log_msg, "load_pe: ERROR - Relocation failed at block %d", reloc_block_count - 1);
+            DWORD exceptionCode = GetExceptionCode();
+            sprintf(log_msg, "load_pe: CRITICAL ERROR - Relocation failed at block %d with exception 0x%08X", reloc_block_count - 1, exceptionCode);
+            debug_log(log_msg);
+            sprintf(log_msg, "load_pe: Relocation block VA: 0x%x, Size: %d", p_reloc->VirtualAddress, p_reloc->SizeOfBlock);
             debug_log(log_msg);
             return NULL;
         }
@@ -640,7 +817,14 @@ void* load_pe(PBYTE pe_data, PBYTE* base_address, DWORD64* original_imagebase) {
             v_perm = (s_perm & IMAGE_SCN_MEM_WRITE) ? PAGE_READWRITE : PAGE_READONLY;
         }
         DWORD oldProtect;
-        VirtualProtect(dest, sections[i].Misc.VirtualSize, v_perm, &oldProtect);
+        if (!VirtualProtect(dest, sections[i].Misc.VirtualSize, v_perm, &oldProtect)) {
+            DWORD error = GetLastError();
+            sprintf(log_msg, "load_pe: WARNING - Failed to set permissions for section %d (error 0x%08X), continuing...", i, error);
+            debug_log(log_msg);
+        } else {
+            sprintf(log_msg, "load_pe: Set permissions for section %d: 0x%08X", i, (DWORD)v_perm);
+            debug_log(log_msg);
+        }
     }
 
     debug_log("load_pe: Section permissions set");
@@ -649,6 +833,13 @@ void* load_pe(PBYTE pe_data, PBYTE* base_address, DWORD64* original_imagebase) {
     IMAGE_DATA_DIRECTORY tls_dir = p_NT_HDR->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_TLS];
     if (tls_dir.VirtualAddress != 0 && tls_dir.Size != 0) {
         debug_log("load_pe: Found TLS directory, processing callbacks...");
+        // Validate TLS directory location
+        if (tls_dir.VirtualAddress >= p_NT_HDR->OptionalHeader.SizeOfImage) {
+            debug_log("load_pe: ERROR - TLS directory address is outside image bounds");
+            VirtualFree(addrp, 0, MEM_RELEASE);
+            return NULL;
+        }
+        
         IMAGE_TLS_DIRECTORY64* tls_data = (IMAGE_TLS_DIRECTORY64*)(addrp + tls_dir.VirtualAddress);
         
         if (tls_data->AddressOfCallBacks != 0) {
@@ -671,6 +862,15 @@ void* load_pe(PBYTE pe_data, PBYTE* base_address, DWORD64* original_imagebase) {
                     DWORD exceptionCode = GetExceptionCode();
                     sprintf(log_msg, "load_pe: TLS callback %d failed with exception 0x%08X, continuing...", i, exceptionCode);
                     debug_log(log_msg);
+                    
+                    // Log specific exception types for TLS callbacks
+                    if (exceptionCode == 0xC0000005) {
+                        debug_log("load_pe: TLS callback exception: Access Violation");
+                    } else if (exceptionCode == 0xC000001D) {
+                        debug_log("load_pe: TLS callback exception: Illegal Instruction");
+                    } else if (exceptionCode == 0xC00000FD) {
+                        debug_log("load_pe: TLS callback exception: Stack Overflow");
+                    }
                 }
             }
         }
@@ -680,6 +880,14 @@ void* load_pe(PBYTE pe_data, PBYTE* base_address, DWORD64* original_imagebase) {
     }
 
     PVOID entry_point = (PVOID)(addrp + p_NT_HDR->OptionalHeader.AddressOfEntryPoint);
+    
+    // Final validation before returning
+    if (entry_point == NULL || (ULONG_PTR)entry_point < (ULONG_PTR)addrp || 
+        (ULONG_PTR)entry_point >= (ULONG_PTR)addrp + p_NT_HDR->OptionalHeader.SizeOfImage) {
+        debug_log("load_pe: ERROR - Entry point is outside loaded image bounds");
+        VirtualFree(addrp, 0, MEM_RELEASE);
+        return NULL;
+    }
     
     // Set the base address for the caller
     if (base_address) *base_address = addrp;
