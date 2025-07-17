@@ -712,38 +712,15 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
     
     // Timestamp operations working correctly now
     
-    // Initialize logging first - with safety check for unpacked environment
-    bool loggingInitialized = false;
+    // Skip logging initialization in unpacked environment to avoid crashes
+    // The lambda function approach is causing access violations
     
-    // Use separate function to avoid C++ exception handling conflicts
-    auto SafeInitializeLogging = []() -> bool {
-        __try {
-            xlog::Normal("AmalgamLoader starting up...");
-            return true;
-        } __except(EXCEPTION_EXECUTE_HANDLER) {
-            // Logging failed - probably unpacked environment with incomplete CRT
-            FILE* crash_log = nullptr;
-            fopen_s(&crash_log, "emergency_debug.log", "a");
-            if (crash_log) {
-                fprintf(crash_log, "[%lu] wWinMain: Logging initialization FAILED (exception 0x%08X) - continuing without xlog\n", 
-                        GetTickCount(), GetExceptionCode());
-                fflush(crash_log);
-                fclose(crash_log);
-            }
-            return false;
-        }
-    };
-    
-    loggingInitialized = SafeInitializeLogging();
-    
-    if (loggingInitialized) {
-        // Emergency debugging after logging init
-        fopen_s(&emergency_log, "emergency_debug.log", "a");
-        if (emergency_log) {
-            fprintf(emergency_log, "[%lu] wWinMain: Logging initialized\n", GetTickCount());
-            fflush(emergency_log);
-            fclose(emergency_log);
-        }
+    // Just write to emergency debug log directly
+    fopen_s(&emergency_log, "emergency_debug.log", "a");
+    if (emergency_log) {
+        fprintf(emergency_log, "[%lu] wWinMain: Logging initialization SKIPPED (unpacked environment)\n", GetTickCount());
+        fflush(emergency_log);
+        fclose(emergency_log);
     }
     
     // CRITICAL: Initialize SelfPacker protection FIRST - before ANY other code execution
